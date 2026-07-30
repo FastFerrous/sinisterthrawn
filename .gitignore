@@ -1,5 +1,5 @@
 build/*
-deps/*
+deps/mbedtls
 **/__pycache__/*
 **/*.pyc
 **/*.pyo
