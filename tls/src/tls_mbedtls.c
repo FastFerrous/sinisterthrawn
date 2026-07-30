@@ -109,6 +109,7 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, const char *host, const c
         goto exit;
     }
 
+    /* store SNI of remote cert that will be checked against */
     if (mbedtls_ssl_set_hostname(&mbed_tls->ssl, host))
     {
         goto exit;
@@ -126,7 +127,7 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, const char *host, const c
 
     conn->fd = mbed_tls->sock.fd;
 
-    /* setup callbacks for write and read operations */
+    /* setup callbacks for internal mbedtls write and read operations */
     mbedtls_ssl_set_bio(&mbed_tls->ssl, &mbed_tls->sock,
                         mbedtls_net_send, mbedtls_net_recv, NULL);
 
@@ -141,4 +142,5 @@ exit:
     return status;
 }
 
-// todo: add required errors and implement into code
+// todo: add actual client certs to be used via der format and crt_init and crt_parse
+// todo: add required errors and implement into code ie connection failure, etc.
