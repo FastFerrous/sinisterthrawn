@@ -17,8 +17,12 @@ int main()
             printf("failed to connect\n");
             return 1;
         }
-
         printf("connected to server\n");
+
+        while (1)
+        {
+            continue;
+        };
     }
 
     if (cxt)

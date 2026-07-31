@@ -1,6 +1,6 @@
 import asyncio
 from tls.tls import Tls
-from shell.shell import SessionManager
+from shell.SessionManager import SessionManager
 
 
 async def main():
@@ -8,9 +8,8 @@ async def main():
     await mgr.manage()
 
 
-
 if __name__ == "__main__":
     asyncio.run(main())
 
 
-# setup argparse for logger level and that will be configured and setup globally for all resources 
+# setup argparse for logger level and that will be configured and setup globally for all resources
