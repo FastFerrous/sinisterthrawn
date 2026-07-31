@@ -1,7 +1,9 @@
 import ssl
 import socket
+import asyncio
+from pathlib import Path
 from enum import IntEnum
-
+from collections.abc import Callable
 
 class Mode(IntEnum):
     SERVER = (0,)
@@ -11,34 +13,52 @@ class Mode(IntEnum):
 class Tls:
     """Serves as single entrypoint for tls operations, provides both server and client modes"""
 
-    def __init__(self, address: str, port: int, mode: bool):
+    def __init__(self, address: str, port: int, certs_dir: Path, mode: bool):
         self.host: str = address
         self.port: int = port
+        self.certs: Path = certs_dir
         self.mode: Mode = Mode.SERVER if mode else Mode.CLIENT
+        self.server: asyncio.Server | None = None
+        self.sock: socket.socket | None = None
 
-    def listen(self):
+    async def create_listener(self, on_connect_cb: Callable[[asyncio.StreamReader, asyncio.StreamWriter], None]) -> bool:
+        ''' Creates asyncio listener and awaits inbound client connections '''
+
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain("certs/cert.pem", "certs/key.pem")
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind((self.host, self.port))
-            sock.listen(1)
-            print(f"Listening on {self.host}:{self.port}")
+        try: 
+            ctx.load_cert_chain(f"{self.certs}/svr_crt.pem", f"{self.certs}/svr_key.pem")
+        except FileNotFoundError: 
+            return False
 
-            with ctx.wrap_socket(sock, server_side=True) as ssock:
-                conn, addr = ssock.accept()
-                with conn:
-                    print(f"Connection from {addr}")
-                    try:
-                        data = conn.recv(4096)
-                    except Exception:
-                        print("eh")
-                        return
+        try: 
+            self.server = await asyncio.start_server(
+                on_connect_cb, 
+                str(self.host), 
+                self.port, 
+                ssl=ctx
+            )
+        except (PermissionError, OSError):
+            # logging info for error
+            return False
 
-                    print(f"Received: {data}")
-                    conn.sendall(b"Hello from server\n")
-                    print("Response sent, closing")
+        return True
+
+    async def start_listener(self) -> None: 
+        ''' Used to separate logic between create and start so that caller can execute as a background asyncio task '''
+
+        async with self.server:
+            await self.server.serve_forever()
 
 
-# need to take in all requirements, address, port, certs, mode, etc. if client, it needs the server cert
+
+ 
+
+
+
+# need to modify to include ca cert since it uses that, so need server key, server crt, ca -- server.key, server.crt, ca.crt
+# handle errors, need to be more verbose once dirty code is done 
+
+# listen -p 4443 --certs /opt/sinisterthrawn/framework/certs
+# listen -p 8080 --certs /opt/sinisterthrawn/framework/certs
+
