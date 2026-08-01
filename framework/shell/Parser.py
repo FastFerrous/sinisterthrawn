@@ -1,8 +1,10 @@
 import argparse
+import logging
 from ipaddress import IPv4Address
 from pathlib import Path
 from typing import Optional
 
+log = logging.getLogger("framework")
 
 def parse_listen_args(args: list) -> Optional[argparse.Namespace]:
     """Parses user supplied listen `args` and returns namespace on success or None on error"""
@@ -32,13 +34,19 @@ def parse_listen_args(args: list) -> Optional[argparse.Namespace]:
 
     try:
         parsed_args = parser.parse_args(args)
-    except (SystemExit, argparse.ArgumentError):
+    except argparse.ArgumentError as error:
+        log.info(f"{error}")
         return None
-
+    
+    except SystemExit:
+        return None
+    
     if not 1 <= parsed_args.port <= 65535:
+        log.info(f"port {parsed_args.port} out of range [1-65535]")
         return None
 
     if not parsed_args.certs.exists() or not parsed_args.certs.is_dir():
+        log.info(f"{parsed_args.certs} is not a valid directory")
         return None
 
     return parsed_args
@@ -60,9 +68,13 @@ def parse_kill_listener_args(args: list) -> Optional[argparse.Namespace]:
 
     try:
         parsed_args = parser.parse_args(args)
-    except (SystemExit, argparse.ArgumentError) as e:
-        print(e)
+    except argparse.ArgumentError as error:
+        log.info(f"{error}")
         return None
+    
+    except SystemExit:
+        return None
+    
 
     return parsed_args
 
@@ -83,11 +95,41 @@ def parse_interact_args(args: list) -> Optional[argparse.Namespace]:
 
     try:
         parsed_args = parser.parse_args(args)
-    except (SystemExit, argparse.ArgumentError) as e:
-        print(e)
+    except argparse.ArgumentError as error:
+        log.info(f"{error}")
         return None
+    
+    except SystemExit:
+        return None
+    
+
+    return parsed_args
+
+def parse_kill_session_args(args: list) -> Optional[argparse.Namespace]:
+    """Parses user supplied `args` and returns namespace on success or None on error"""
+
+    parser = argparse.ArgumentParser(
+        prog="kill_session",
+        usage="kill_session --index <num>",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        exit_on_error=False,
+        color=False,
+    )
+
+    parser.add_argument(
+        "-i", "--index", type=int, required=True, help="index of session entry"
+    )
+
+    try:
+        parsed_args = parser.parse_args(args)
+    except argparse.ArgumentError as error:
+        log.info(f"{error}")
+        return None
+    
+    except SystemExit:
+        return None
+    
 
     return parsed_args
 
 
-# certs will be the path, we have the server key and cert, client key and cert and then the ca. uses ca to validate the client.

@@ -1,10 +1,10 @@
 import ssl
 import socket
 import asyncio
+import logging
 from pathlib import Path
 from enum import IntEnum
 from collections.abc import Callable
-
 
 class Mode(IntEnum):
     SERVER = (0,)
@@ -21,6 +21,7 @@ class Tls:
         self.mode: Mode = Mode.SERVER if mode else Mode.CLIENT
         self.server: asyncio.Server | None = None
         self.sock: socket.socket | None = None
+        self.log: logging.Logger = logging.getLogger("framework")
 
     async def create_listener(
         self,
@@ -34,16 +35,19 @@ class Tls:
             ctx.load_cert_chain(
                 f"{self.certs}/svr_crt.pem", f"{self.certs}/svr_key.pem"
             )
-        except FileNotFoundError:
+        except FileNotFoundError as error:
+            self.log.warning(f"{error}")
             return False
 
         try:
             self.server = await asyncio.start_server(
                 on_connect_cb, str(self.host), self.port, ssl=ctx
             )
-        except (PermissionError, OSError):
-            # logging info for error
+        except (PermissionError, OSError) as error:
+            self.log.warning(f"{error}")
             return False
+
+        self.log.info(f"Successfully started listener on {self.host}:{self.port}")
 
         return True
 
@@ -54,8 +58,9 @@ class Tls:
             await self.server.serve_forever()
 
 
+
+
 # need to modify to include ca cert since it uses that, so need server key, server crt, ca -- server.key, server.crt, ca.crt
 # handle errors, need to be more verbose once dirty code is done
 
 # listen -p 4443 --certs /opt/sinisterthrawn/framework/certs
-# listen -p 8080 --certs /opt/sinisterthrawn/framework/certs

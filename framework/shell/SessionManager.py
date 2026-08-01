@@ -1,5 +1,6 @@
 import shlex
 import asyncio
+import logging
 from enum import IntEnum
 from uuid import uuid4
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from tls.tls import Tls, Mode
 from shell.Session import Session
-from shell.Parser import parse_listen_args, parse_kill_listener_args, parse_interact_args
+from shell.Parser import parse_listen_args, parse_kill_listener_args, parse_interact_args, parse_kill_session_args
 
 
 @dataclass
@@ -54,26 +55,10 @@ class SessionManager:
     async def _on_connect(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        """Callback fn called from within asyncio server upon accepting new tls connections"""
-        # todo: may need renamed or dual purposed for outbound connections as well
         # todo: log printing that an inbound connection was established from {writer.get_extra_info("peername")}
 
-        # awaitable sleep timer used to continue looping until sessions have been marked as inactive
-        # asyncio server will clean up reader and writer resources upon function return
-        ASYNC_SLEEP_TIME : int = 3
-
-        # generate unique session id, pass in reader and writer and store within internal sessions dict
         session = Session(uuid4(), reader, writer)
         self.sessions[session.session_id] = session
-
-        # loop until sessions have been marked as inactive and then return for resource cleanup 
-        try: 
-            while session.active:
-                await asyncio.sleep(ASYNC_SLEEP_TIME)
-        finally: 
-            self.sessions.pop(session.session_id)
-            writer.close()
-            await writer.wait_closed()
 
     async def manage(self) -> None:
         with patch_stdout():
@@ -163,7 +148,12 @@ class SessionManager:
 
         # close down the server and await for any pending connections to complete before cancelling the asyncio task
         entry.tls.server.close()
-        await entry.tls.server.wait_closed()
+
+        try: 
+            await asyncio.wait_for(entry.tls.server.wait_closed(), timeout=5)
+        except asyncio.TimeoutError: 
+            pass 
+
         entry.task.cancel()
 
         return SessionManagerErrors.SUCCESS
@@ -205,6 +195,35 @@ class SessionManager:
 
         return SessionManagerErrors.SUCCESS
 
+    async def kill_session(self, args: list) -> SessionManagerErrors:
+        if not self.sessions:
+            return SessionManagerErrors.NO_ACTIVE_SESSIONS
+        
+        if len(args) == 0:
+            return SessionManagerErrors.INVALID_ARGS
+
+        parsed_args = parse_kill_session_args(args)
+        if parsed_args is None:
+            return SessionManagerErrors.INVALID_ARGS
+
+        try:
+            sess_uid = list(self.sessions.keys())[parsed_args.index]
+            session = self.sessions.pop(sess_uid)
+        except IndexError:
+            return SessionManagerErrors.INVALID_ARGS
+
+        if session.writer:
+            session.writer.close()
+
+            try: 
+                await asyncio.wait_for(session.writer.wait_closed(), timeout=5)
+            except (asyncio.TimeoutError, ConnectionResetError): 
+                pass 
+
+        return SessionManagerErrors.SUCCESS
+
+
+
 
 
 
@@ -221,31 +240,10 @@ class SessionManager:
         self.sessions[sid] = writer
         print(f"[+] session {sid} connected to {host}:{port}")
 
-    async def kill_session(self, args):
-        """kill_session <id>"""
-        if not args:
-            print("usage: kill_session <id>")
-            return
-
-        sid = int(args[0])
-        writer = self.sessions.pop(sid, None)
-        if writer:
-            writer.close()
-            await writer.wait_closed()
-            print(f"[-] session {sid} closed")
-        else:
-            print(f"no session with id {sid}")
-
     async def exit(self, _):
-        for writer in self.sessions.values():
-            writer.close()
-        for server in self.listeners.values():
-            server.close()
-        self.is_running = False
+        pass 
 
 
-# todo: create shutdown function that is used as a cleanup, closes all listners, closes all sessions (false and close()), gathres tasks and wait with timeout for task.cancel()
-# todo: during on_connect, check whether returning actually closes those resources, it would make sense that they dont get tracked and then cleaned after a callback
+# todo: parse args can take logger object? rather than relying on global
+# todo: (exit) create shutdown function that is used as a cleanup, closes all listners, closes all sessions (false and close()), gathres tasks and wait with timeout for task.cancel()
 # todo: inside manage(), double check all try/excepts for actual correct error handling
-# todo: add logger() prints depending on debug level, ie most will be info. so as you run the cli, you get info prints
-# todo: on_connect may need to be on_accept, we will need to see when we start doing the alternate

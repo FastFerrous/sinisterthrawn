@@ -70,7 +70,20 @@ class Session:
                         continue
 
     async def get_process_list(self, args: list):
+        # debug 
+        if self.writer.is_closing():
+            print("closing")
+
         self.writer.write(b'apples')
+
+        try: 
+            await self.writer.drain()
+        except ConnectionResetError:
+            print("connection has been reset")
+
+        # await self.reader.read(size)
+        # end debug 
+
         pass 
 
     async def get_netstat(self, args: list):
