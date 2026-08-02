@@ -6,12 +6,13 @@ from typing import Optional
 
 log = logging.getLogger("framework")
 
-def parse_listen_args(args: list) -> Optional[argparse.Namespace]:
+
+def parse_listen_args(args: list, help_str: str) -> Optional[argparse.Namespace]:
     """Parses user supplied listen `args` and returns namespace on success or None on error"""
 
     parser = argparse.ArgumentParser(
         prog="listen",
-        usage="listen [-b <address>] [-p <port>] --certs <cert dir>",
+        usage=help_str,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         exit_on_error=False,
         color=False,
@@ -37,10 +38,10 @@ def parse_listen_args(args: list) -> Optional[argparse.Namespace]:
     except argparse.ArgumentError as error:
         log.info(f"{error}")
         return None
-    
+
     except SystemExit:
         return None
-    
+
     if not 1 <= parsed_args.port <= 65535:
         log.info(f"port {parsed_args.port} out of range [1-65535]")
         return None
@@ -51,12 +52,13 @@ def parse_listen_args(args: list) -> Optional[argparse.Namespace]:
 
     return parsed_args
 
-def parse_kill_listener_args(args: list) -> Optional[argparse.Namespace]:
+
+def parse_kill_listener_args(args: list, help_str: str) -> Optional[argparse.Namespace]:
     """Parses user supplied `args` and returns namespace on success or None on error"""
 
     parser = argparse.ArgumentParser(
         prog="kill_listener",
-        usage="kill_listener --index <num>",
+        usage=help_str,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         exit_on_error=False,
         color=False,
@@ -71,19 +73,19 @@ def parse_kill_listener_args(args: list) -> Optional[argparse.Namespace]:
     except argparse.ArgumentError as error:
         log.info(f"{error}")
         return None
-    
+
     except SystemExit:
         return None
-    
 
     return parsed_args
 
-def parse_interact_args(args: list) -> Optional[argparse.Namespace]:
+
+def parse_interact_args(args: list, help_str: str) -> Optional[argparse.Namespace]:
     """Parses user supplied `args` and returns namespace on success or None on error"""
 
     parser = argparse.ArgumentParser(
         prog="interact",
-        usage="kill_listener --index <num>",
+        usage=help_str, 
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         exit_on_error=False,
         color=False,
@@ -98,19 +100,19 @@ def parse_interact_args(args: list) -> Optional[argparse.Namespace]:
     except argparse.ArgumentError as error:
         log.info(f"{error}")
         return None
-    
+
     except SystemExit:
         return None
-    
 
     return parsed_args
 
-def parse_kill_session_args(args: list) -> Optional[argparse.Namespace]:
+
+def parse_kill_session_args(args: list, help_str: str) -> Optional[argparse.Namespace]:
     """Parses user supplied `args` and returns namespace on success or None on error"""
 
     parser = argparse.ArgumentParser(
         prog="kill_session",
-        usage="kill_session --index <num>",
+        usage=help_str,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         exit_on_error=False,
         color=False,
@@ -125,11 +127,8 @@ def parse_kill_session_args(args: list) -> Optional[argparse.Namespace]:
     except argparse.ArgumentError as error:
         log.info(f"{error}")
         return None
-    
+
     except SystemExit:
         return None
-    
 
     return parsed_args
-
-

@@ -11,12 +11,18 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from tls.tls import Tls, Mode
 from shell.Session import Session
-from shell.Parser import parse_listen_args, parse_kill_listener_args, parse_interact_args, parse_kill_session_args
+from shell.Parser import (
+    parse_listen_args,
+    parse_kill_listener_args,
+    parse_interact_args,
+    parse_kill_session_args,
+)
 
 
 @dataclass
 class ListenerEntry:
     """Wraps asyncio task as well as tls instance for each listener session"""
+
     task: asyncio.Task
     tls: Tls
 
@@ -25,8 +31,8 @@ class SessionManagerErrors(IntEnum):
     SUCCESS = (0,)
     INVALID_ARGS = (1,)
     UNABLE_TO_LISTEN = (2,)
-    NO_ACTIVE_LISTENERS = 3, 
-    NO_ACTIVE_SESSIONS = 4 
+    NO_ACTIVE_LISTENERS = (3,)
+    NO_ACTIVE_SESSIONS = 4
 
 
 class SessionManager:
@@ -36,6 +42,7 @@ class SessionManager:
         self.is_running: bool = True
         self.listeners: dict[uuid4, ListenerEntry] = {}
         self.sessions: dict[uuid4, Session] = {}
+        self.log: logging.Logger = logging.getLogger("framework")
         self.commands: dict = {
             "exit": self.exit,
             "listen": self.listen,
@@ -55,10 +62,12 @@ class SessionManager:
     async def _on_connect(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        # todo: log printing that an inbound connection was established from {writer.get_extra_info("peername")}
-
         session = Session(uuid4(), reader, writer)
         self.sessions[session.session_id] = session
+
+        session.log.info(
+            f"Session {session.session_id} established via peername: {session.addr[0]}:{session.addr[1]}"
+        )
 
     async def manage(self) -> None:
         with patch_stdout():
@@ -66,37 +75,35 @@ class SessionManager:
                 try:
                     cmd = await self.session.prompt_async(">>> ")
                 except (EOFError, KeyboardInterrupt):
-                    break
+                    await self.exit(None)
+                    continue 
 
                 if cmd is None or 0 == len(cmd):
                     continue
 
                 try:
                     split_cmd = shlex.split(cmd)
-                except ValueError:
+                except ValueError as format_error:
+                    self.log(format_error)
                     continue
 
                 if split_cmd[0] not in self.commands:
-                    # logging invalid command
+                    self.log.info(f"invalid command: {split_cmd[0]}")
                     continue
 
-                result = await self.commands[split_cmd[0]](split_cmd[1:])
-                match result:
-                    case SessionManagerErrors.SUCCESS:
-                        continue
-                    case SessionManagerErrors.INVALID_ARGS:
-                        # logger here
-                        # may swap this to catch only critical errors, since loggin can be done elsewehwere
-                        continue
+                await self.commands[split_cmd[0]](split_cmd[1:])
 
     async def listen(self, args: list) -> SessionManagerErrors:
         """Uses supplied values to craft a Tls `listener` that awaits inbound connections"""
 
+        usage : str = "listen [-b <address>] [-p <port>] --certs <cert dir>"
+
         # validate args length is non zero and then pass to argparse
         if len(args) == 0:
+            self.log.info(usage)
             return SessionManagerErrors.INVALID_ARGS
 
-        parsed_args = parse_listen_args(args)
+        parsed_args = parse_listen_args(args, usage)
         if parsed_args is None:
             return SessionManagerErrors.INVALID_ARGS
 
@@ -115,8 +122,8 @@ class SessionManager:
         return SessionManagerErrors.SUCCESS
 
     async def show_listeners(self, _) -> SessionManagerErrors:
-        # todo: log print if none
         if not self.listeners:
+            self.log.info("No active listeners")
             return SessionManagerErrors.NO_ACTIVE_LISTENERS
 
         for idx, (_, entry) in enumerate(self.listeners.items()):
@@ -129,14 +136,19 @@ class SessionManager:
     async def kill_listener(self, args: list) -> SessionManagerErrors:
         """Cancels the current running asyncio task for specified listener session and awaits server closure"""
 
+        usage = "kill_listener --index <num>"
+
+        if not self.listeners:
+            self.log.info("No active listeners")
+            return SessionManagerErrors.NO_ACTIVE_LISTENERS
+
         # parse the required args for cancelling listener sessions
         if len(args) == 0:
-            # todo: logging
+            self.log.info(usage)
             return SessionManagerErrors.INVALID_ARGS
 
-        parsed_args = parse_kill_listener_args(args)
+        parsed_args = parse_kill_listener_args(args, usage)
         if parsed_args is None:
-            # todo: logging
             return SessionManagerErrors.INVALID_ARGS
 
         # attempt to validate that the index exists within the stored dict and if so, pop the entry
@@ -144,33 +156,36 @@ class SessionManager:
             listener_uuid = list(self.listeners.keys())[parsed_args.index]
             entry = self.listeners.pop(listener_uuid)
         except IndexError:
+            self.log.info(f"Invalid index selection {parsed_args.index}")
             return SessionManagerErrors.INVALID_ARGS
 
         # close down the server and await for any pending connections to complete before cancelling the asyncio task
         entry.tls.server.close()
 
-        try: 
+        try:
             await asyncio.wait_for(entry.tls.server.wait_closed(), timeout=5)
-        except asyncio.TimeoutError: 
-            pass 
+        except asyncio.TimeoutError:
+            pass
 
         entry.task.cancel()
 
         return SessionManagerErrors.SUCCESS
 
     async def interact(self, args: list) -> SessionManagerErrors:
+
+        usage : str = "interact --index <num>"
+
         if not self.sessions:
-            # log print
+            self.log.info("No active remote sessions")
             return SessionManagerErrors.NO_ACTIVE_SESSIONS
 
         if len(args) == 0:
-            # todo: logging
+            self.log.info(usage)
             return SessionManagerErrors.INVALID_ARGS
-        
+
         # parse the required args for interacting with remote sessions
-        parsed_args = parse_interact_args(args)
+        parsed_args = parse_interact_args(args, usage)
         if parsed_args is None:
-            # todo: logging
             return SessionManagerErrors.INVALID_ARGS
 
         # attempt to validate supplied index and obtain handle to session
@@ -178,31 +193,39 @@ class SessionManager:
             sess_uuid = list(self.sessions.keys())[parsed_args.index]
             session = self.sessions[sess_uuid]
         except IndexError:
+            self.log.info(f"Invalid index selection {parsed_args.index}")
             return SessionManagerErrors.INVALID_ARGS
 
-        # go interactive with specified session 
+        # go interactive with specified session
         await session.run()
 
         return SessionManagerErrors.SUCCESS
 
     async def show_sessions(self, _):
         if not self.sessions:
-            #todo: log print
+            self.log.info("No active remote sessions")
             return SessionManagerErrors.NO_ACTIVE_SESSIONS
 
         for idx, (sid, session) in enumerate(self.sessions.items()):
-            print(f"[{idx}] {session.name} -- {sid} -- {session.addr[0]}:{session.addr[1]}")
+            print(
+                f"[{idx}] {session.name} -- {sid} -- {session.addr[0]}:{session.addr[1]}"
+            )
 
         return SessionManagerErrors.SUCCESS
 
     async def kill_session(self, args: list) -> SessionManagerErrors:
+
+        usage: str = "kill_session --index <num>"
+
         if not self.sessions:
+            self.log.info("No active remote sessions")
             return SessionManagerErrors.NO_ACTIVE_SESSIONS
-        
+
         if len(args) == 0:
+            self.log.info(usage)
             return SessionManagerErrors.INVALID_ARGS
 
-        parsed_args = parse_kill_session_args(args)
+        parsed_args = parse_kill_session_args(args, usage)
         if parsed_args is None:
             return SessionManagerErrors.INVALID_ARGS
 
@@ -210,40 +233,49 @@ class SessionManager:
             sess_uid = list(self.sessions.keys())[parsed_args.index]
             session = self.sessions.pop(sess_uid)
         except IndexError:
+            self.log.info(f"Invalid index selection {parsed_args.index}")
             return SessionManagerErrors.INVALID_ARGS
 
         if session.writer:
             session.writer.close()
 
-            try: 
+            try:
                 await asyncio.wait_for(session.writer.wait_closed(), timeout=5)
-            except (asyncio.TimeoutError, ConnectionResetError): 
-                pass 
+            except (asyncio.TimeoutError, ConnectionResetError):
+                pass
 
         return SessionManagerErrors.SUCCESS
 
-
-
-
-
-
-    async def connect(self, args):
-        """connect <host> <port>"""
-        if len(args) < 2:
-            print("usage: connect <host> <port>")
-            return
-
-        host, port = args[0], int(args[1])
-        reader, writer = await asyncio.open_connection(host, port)
-        self._session_id += 1
-        sid = self._session_id
-        self.sessions[sid] = writer
-        print(f"[+] session {sid} connected to {host}:{port}")
-
     async def exit(self, _):
+        self.is_running = False
+
+        for l_uuid, listener in self.listeners.items(): 
+            listener.tls.server.close()
+
+            try:
+                await asyncio.wait_for(listener.tls.server.wait_closed(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
+
+            listener.task.cancel()
+
+            self.log.debug(f"Closed listener: {l_uuid}")
+
+
+        for _, session in self.sessions.items():
+            if session.writer: 
+                session.writer.close()
+
+                try:
+                    await asyncio.wait_for(session.writer.wait_closed(), timeout=5)
+                except (asyncio.TimeoutError, ConnectionResetError):
+                    pass
+
+            self.log.debug(f"Closed remote session: {session.session_id}")
+
+
+# todo: connect
+    async def connect(self, args):
         pass 
 
 
-# todo: parse args can take logger object? rather than relying on global
-# todo: (exit) create shutdown function that is used as a cleanup, closes all listners, closes all sessions (false and close()), gathres tasks and wait with timeout for task.cancel()
-# todo: inside manage(), double check all try/excepts for actual correct error handling

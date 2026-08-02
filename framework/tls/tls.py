@@ -6,6 +6,7 @@ from pathlib import Path
 from enum import IntEnum
 from collections.abc import Callable
 
+
 class Mode(IntEnum):
     SERVER = (0,)
     CLIENT = 1
@@ -58,9 +59,5 @@ class Tls:
             await self.server.serve_forever()
 
 
-
-
 # need to modify to include ca cert since it uses that, so need server key, server crt, ca -- server.key, server.crt, ca.crt
-# handle errors, need to be more verbose once dirty code is done
 
-# listen -p 4443 --certs /opt/sinisterthrawn/framework/certs
