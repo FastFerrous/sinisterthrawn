@@ -4,6 +4,7 @@ import logging
 from enum import IntEnum
 from uuid import uuid4
 from dataclasses import dataclass
+from prettytable import PrettyTable
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.completion import WordCompleter
@@ -76,7 +77,7 @@ class SessionManager:
                     cmd = await self.session.prompt_async(">>> ")
                 except (EOFError, KeyboardInterrupt):
                     await self.exit(None)
-                    continue 
+                    continue
 
                 if cmd is None or 0 == len(cmd):
                     continue
@@ -96,7 +97,7 @@ class SessionManager:
     async def listen(self, args: list) -> SessionManagerErrors:
         """Uses supplied values to craft a Tls `listener` that awaits inbound connections"""
 
-        usage : str = "listen [-b <address>] [-p <port>] --certs <cert dir>"
+        usage: str = "listen [-b <address>] [-p <port>] --certs <cert dir>"
 
         # validate args length is non zero and then pass to argparse
         if len(args) == 0:
@@ -126,10 +127,12 @@ class SessionManager:
             self.log.info("No active listeners")
             return SessionManagerErrors.NO_ACTIVE_LISTENERS
 
-        for idx, (_, entry) in enumerate(self.listeners.items()):
+        table = PrettyTable(["Index", "UUID", "Address"])
+        for idx, (l_uid, entry) in enumerate(self.listeners.items()):
             for sock in entry.tls.server.sockets:
                 addr = sock.getsockname()
-                print(f"[{idx}] -- Local Address:{addr[0]} Local Port:{addr[1]}")
+                table.add_row([idx, l_uid, addr])
+        print(table)
 
         return SessionManagerErrors.SUCCESS
 
@@ -173,7 +176,7 @@ class SessionManager:
 
     async def interact(self, args: list) -> SessionManagerErrors:
 
-        usage : str = "interact --index <num>"
+        usage: str = "interact --index <num>"
 
         if not self.sessions:
             self.log.info("No active remote sessions")
@@ -206,10 +209,10 @@ class SessionManager:
             self.log.info("No active remote sessions")
             return SessionManagerErrors.NO_ACTIVE_SESSIONS
 
-        for idx, (sid, session) in enumerate(self.sessions.items()):
-            print(
-                f"[{idx}] {session.name} -- {sid} -- {session.addr[0]}:{session.addr[1]}"
-            )
+        table = PrettyTable(["Index", "Session Name", "Session UUID", "Address"])
+        for idx, (s_uid, session) in enumerate(self.sessions.items()):
+            table.add_row([idx, session.name, s_uid, self.session.addr])
+        print(table)
 
         return SessionManagerErrors.SUCCESS
 
@@ -249,7 +252,7 @@ class SessionManager:
     async def exit(self, _):
         self.is_running = False
 
-        for l_uuid, listener in self.listeners.items(): 
+        for l_uuid, listener in self.listeners.items():
             listener.tls.server.close()
 
             try:
@@ -261,9 +264,8 @@ class SessionManager:
 
             self.log.debug(f"Closed listener: {l_uuid}")
 
-
         for _, session in self.sessions.items():
-            if session.writer: 
+            if session.writer:
                 session.writer.close()
 
                 try:
@@ -273,9 +275,6 @@ class SessionManager:
 
             self.log.debug(f"Closed remote session: {session.session_id}")
 
-
-# todo: connect
+    # todo: connect
     async def connect(self, args):
-        pass 
-
-
+        pass

@@ -25,7 +25,7 @@ class Session:
     ):
         self.name: str | None = None  # will be used later to add custom names
         self.session_id: uuid4 = session_id
-        self.is_active: bool = False 
+        self.is_active: bool = False
         self.reader: asyncio.StreamReader = reader
         self.writer: asyncio.StreamWriter = writer
         self.addr: tuple[str, int] = writer.get_extra_info("peername")
@@ -58,7 +58,7 @@ class Session:
                     )
                 except (EOFError, KeyboardInterrupt):
                     await self.background_session(None)
-                    continue 
+                    continue
 
                 if cmd is None or 0 == len(cmd):
                     continue
@@ -70,7 +70,9 @@ class Session:
                     continue
 
                 if split_cmd[0] not in self.commands:
-                    self.log.info(f"{split_cmd[0]} is an invalid command within remote session")
+                    self.log.info(
+                        f"{split_cmd[0]} is an invalid command within remote session"
+                    )
                     continue
 
                 await self.commands[split_cmd[0]](split_cmd[1:])

@@ -85,7 +85,7 @@ def parse_interact_args(args: list, help_str: str) -> Optional[argparse.Namespac
 
     parser = argparse.ArgumentParser(
         prog="interact",
-        usage=help_str, 
+        usage=help_str,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         exit_on_error=False,
         color=False,

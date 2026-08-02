@@ -33,9 +33,7 @@ class Tls:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 
         try:
-            ctx.load_cert_chain(
-                f"{self.certs}/server.crt", f"{self.certs}/server.key"
-            )
+            ctx.load_cert_chain(f"{self.certs}/server.crt", f"{self.certs}/server.key")
 
             ctx.load_verify_locations(f"{self.certs}/ca.crt")
             ctx.verify_mode = ssl.CERT_REQUIRED
@@ -46,12 +44,12 @@ class Tls:
 
         try:
             self.server = await asyncio.start_server(
-                on_connect_cb, 
-                str(self.host), 
-                self.port, 
-                ssl=ctx, 
-                reuse_address=True, 
-                ssl_handshake_timeout=3
+                on_connect_cb,
+                str(self.host),
+                self.port,
+                ssl=ctx,
+                reuse_address=True,
+                ssl_handshake_timeout=3,
             )
         except (PermissionError, OSError) as error:
             self.log.warning(f"{error}")
@@ -65,6 +63,3 @@ class Tls:
         """Used to separate logic between server creation and server execution as we have to execute as a scheduled asyncio task to avoid blocking event loop"""
         async with self.server:
             await self.server.serve_forever()
-
-
-

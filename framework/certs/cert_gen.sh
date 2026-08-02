@@ -12,7 +12,7 @@ cat > server_ext.cnf << 'EOF'
 [v3_req]
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature
-extendedKeyUsage=serverAuth
+extendedKeyUsage=serverAuth,clientAuth
 subjectAltName=DNS:localhost
 EOF
 
@@ -20,7 +20,7 @@ cat > client_ext.cnf << 'EOF'
 [v3_req]
 basicConstraints=CA:FALSE
 keyUsage=digitalSignature
-extendedKeyUsage=clientAuth
+extendedKeyUsage=clientAuth,serverAuth
 subjectAltName=DNS:client
 EOF
 
