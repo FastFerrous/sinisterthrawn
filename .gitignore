@@ -3,3 +3,5 @@ deps/mbedtls
 **/__pycache__/*
 **/*.pyc
 **/*.pyo
+framework/certs/*
+!framework/certs/cert_gen.sh

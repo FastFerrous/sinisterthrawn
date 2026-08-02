@@ -34,15 +34,24 @@ class Tls:
 
         try:
             ctx.load_cert_chain(
-                f"{self.certs}/svr_crt.pem", f"{self.certs}/svr_key.pem"
+                f"{self.certs}/server.crt", f"{self.certs}/server.key"
             )
+
+            ctx.load_verify_locations(f"{self.certs}/ca.crt")
+            ctx.verify_mode = ssl.CERT_REQUIRED
+
         except FileNotFoundError as error:
             self.log.warning(f"{error}")
             return False
 
         try:
             self.server = await asyncio.start_server(
-                on_connect_cb, str(self.host), self.port, ssl=ctx
+                on_connect_cb, 
+                str(self.host), 
+                self.port, 
+                ssl=ctx, 
+                reuse_address=True, 
+                ssl_handshake_timeout=3
             )
         except (PermissionError, OSError) as error:
             self.log.warning(f"{error}")
@@ -53,11 +62,9 @@ class Tls:
         return True
 
     async def start_listener(self) -> None:
-        """Used to separate logic between create and start so that caller can execute as a background asyncio task"""
-
+        """Used to separate logic between server creation and server execution as we have to execute as a scheduled asyncio task to avoid blocking event loop"""
         async with self.server:
             await self.server.serve_forever()
 
 
-# need to modify to include ca cert since it uses that, so need server key, server crt, ca -- server.key, server.crt, ca.crt
 
