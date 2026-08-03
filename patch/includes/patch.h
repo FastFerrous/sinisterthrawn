@@ -8,6 +8,12 @@
 #define STAMPED_BUFFER_LEN 2048
 #define SPKI_HASH_LEN 32
 
+typedef enum config_mode_t
+{
+    LISTEN,
+    CALLBACK
+} config_mode_t;
+
 typedef struct stamped_config_t
 {
     uint8_t key;

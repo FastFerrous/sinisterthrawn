@@ -14,11 +14,6 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-# Enable LTO in Release 
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-endif()
-
 # Check whether mbedtls was built and required libraries are present
 set(MBEDTLS_DIR "${CMAKE_SOURCE_DIR}/deps/mbedtls")
 
@@ -30,10 +25,15 @@ if(NOT MBEDTLS_LIB OR NOT MBEDX509_LIB OR NOT MBEDCRYPTO_LIB)
     message(FATAL_ERROR "mbedtls was not built properly, move into `deps` directory and run ./build_deps.sh (Release|Debug)")
 endif()
 
+# temporary, will be eventually behind a make flag for specifying which comms proto to include
 file(GLOB TLS_SOURCES "${CMAKE_SOURCE_DIR}/tls/src/*.c")
-add_executable(sith main.c ${TLS_SOURCES})
+
+file(GLOB UTIL_SOURCES "${CMAKE_SOURCE_DIR}/util/src/*.c")
+file(GLOB PATCH_SOURCES "${CMAKE_SOURCE_DIR}/patch/src/*.c")
+add_executable(sith main.c ${TLS_SOURCES} ${UTIL_SOURCES} ${PATCH_SOURCES})
 
 target_include_directories(sith PRIVATE
+    "${CMAKE_SOURCE_DIR}/patch/includes"
     "${CMAKE_SOURCE_DIR}/util/includes"
     "${CMAKE_SOURCE_DIR}/tls/includes"
     "${MBEDTLS_DIR}/include"
@@ -51,7 +51,7 @@ target_link_libraries(sith PRIVATE
 target_compile_options(sith PRIVATE -ffunction-sections -fdata-sections)
 target_link_options(sith PRIVATE -static -Wl,--gc-sections)
 
-# strip release binaries
+# strip release binaries and enable LTO
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     add_custom_command(TARGET sith POST_BUILD
