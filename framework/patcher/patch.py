@@ -3,8 +3,9 @@ import logging
 import hashlib
 import struct
 from enum import IntEnum
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+from random import randbytes
 from ipaddress import IPv4Address
 from cryptography import x509
 from cryptography.exceptions import UnsupportedAlgorithm
@@ -102,6 +103,7 @@ class Patcher:
         Uses supplied values to build binary patch that will hold sinisterthrawn configuration
 
         Packed Buffer: 
+            - Xor Key       (u8)
             - Mode          (u8)
             - Sleep         (u8)
             - Port          (u16)
@@ -136,11 +138,12 @@ class Patcher:
             self.log.info(f"Address length exceeds maximum of {self.MAX_ADDR_LEN} bytes")
             return None 
 
-        PATCH_FMT = f"!BBH{len(spki)}sBHH{len(addr_bytes)}s{len(public_key)}s{len(private_key)}sHBB{len(sni_bytes)}s"
+        PATCH_FMT = f"!BBBH{len(spki)}sBHH{len(addr_bytes)}s{len(public_key)}s{len(private_key)}sHBB{len(sni_bytes)}s"
 
         try: 
             patch = struct.pack(
                 PATCH_FMT, 
+                randbytes(1)[0], 
                 self.mode, 
                 self.sleep, 
                 self.port,

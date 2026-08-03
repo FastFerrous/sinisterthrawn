@@ -34,6 +34,7 @@ file(GLOB TLS_SOURCES "${CMAKE_SOURCE_DIR}/tls/src/*.c")
 add_executable(sith main.c ${TLS_SOURCES})
 
 target_include_directories(sith PRIVATE
+    "${CMAKE_SOURCE_DIR}/util/includes"
     "${CMAKE_SOURCE_DIR}/tls/includes"
     "${MBEDTLS_DIR}/include"
     "${MBEDTLS_DIR}/tf-psa-crypto/include"

@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdbool.h>
 #include "tls.h"
 #include "psa/crypto.h"
 #include "mbedtls/ssl.h"

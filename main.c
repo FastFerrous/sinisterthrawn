@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "tls.h"
 
+#include <unistd.h> // sleep, debug
+
 int main()
 {
     tls_conn_t *cxt = tls_new();
@@ -19,10 +21,7 @@ int main()
         }
         printf("connected to server\n");
 
-        while (1)
-        {
-            continue;
-        };
+        sleep(10);
     }
 
     if (cxt)
