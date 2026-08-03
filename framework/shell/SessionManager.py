@@ -18,6 +18,7 @@ from shell.Parser import (
     parse_interact_args,
     parse_kill_session_args,
 )
+from patcher.patch import Patcher
 
 
 @dataclass
@@ -249,6 +250,31 @@ class SessionManager:
 
         return SessionManagerErrors.SUCCESS
 
+    async def stamp(self, args: list) -> SessionManagerErrors:
+        """Stamps sinister thrawn binary with embedded TLS configuration"""
+
+        usage: str = (
+            "stamp -p <port> --certs <cert dir>"
+            " [-c <callback addr> | -l <listen addr>]"
+            " [--sleep <seconds before first action>]"
+            " [-s <sni>] [-i <callback interval>] [--m <max callback attempts>]"
+            " --infile <path> --outfile <path>"
+        )
+
+        if len(args) == 0:
+            self.log.info(usage)
+            return SessionManagerErrors.INVALID_ARGS
+
+        patcher = Patcher()
+        parsed_args = patcher.parse_stamper_args(args, usage)
+        if parsed_args is None:
+            return SessionManagerErrors.INVALID_ARGS
+
+        if not patcher.patch_binary(parsed_args.infile, parsed_args.outfile):
+            return SessionManagerErrors.INVALID_ARGS
+
+        return SessionManagerErrors.SUCCESS   
+            
     async def exit(self, _):
         self.is_running = False
 
