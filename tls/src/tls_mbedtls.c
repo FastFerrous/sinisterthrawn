@@ -198,7 +198,9 @@ static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int dept
     return 0;
 }
 
-// issues with cert parsing for now, no time to debug. just setting note
+// issues with cert parsing for now, no time to debug. just setting note ( unkown oid, most likely tied to cert algo. need to check this)
+// failed to load public certificate: -0x2100
+// swapped to prime 256 p256 and now we are attempint to connect. check why failing.
 
 // todo: currently nothing is xord, but it will be so we need to decode the stuff. for now, just testing without obfuscation
 // todo: for now storing everything in connect, but whatever can be shared between listener and connect, will most likely need moved into tls_new()

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # --- CA (root of trust, never used directly for TLS) ---
-openssl req -x509 -newkey ed25519 \
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout ca.key -out ca.crt \
   -days 3650 -nodes \
   -subj "/CN=sozo-ca"
@@ -25,7 +25,7 @@ subjectAltName=DNS:client
 EOF
 
 # --- Server key + CSR ---
-openssl req -newkey ed25519 \
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout server.key -out server.csr \
   -nodes \
   -subj "/CN=localhost"
@@ -41,7 +41,7 @@ openssl x509 -req \
   -extfile server_ext.cnf
 
 # --- Client key + CSR ---
-openssl req -newkey ed25519 \
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -keyout client.key -out client.csr \
   -nodes \
   -subj "/CN=client"
