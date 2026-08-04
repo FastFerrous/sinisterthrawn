@@ -2,6 +2,7 @@
 #define TLS_H
 
 #include <stddef.h>
+#include "patch.h"
 
 #define INVALID_SOCKFD -1
 
@@ -21,7 +22,7 @@ typedef struct tls_conn_t
     int fd;
 
     /* tls library vtable */
-    tls_conn_status_t (*connect)(struct tls_conn_t *conn, const char *host, const char *port);
+    tls_conn_status_t (*connect)(struct tls_conn_t *conn, stamped_config_t *config);
     int (*send)(struct tls_conn_t *conn, const unsigned char *buf, size_t len);
     int (*recv)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
     void (*close)(struct tls_conn_t *conn);
@@ -34,3 +35,5 @@ tls_conn_t *tls_new(void);
 void tls_destroy(tls_conn_t **tls_conn);
 
 #endif
+
+// tls_conn_status_t (*connect)(struct tls_conn_t *conn, const char *host, const char *port); -- removed for testing stamped config

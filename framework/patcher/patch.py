@@ -375,3 +375,5 @@ class Patcher:
             f"Padding: {len(pad_bytes)} | Infile: {self.infile} | Outfile: {self.outfile}")
 
         return True
+
+#todo: change the actual patching function to be async to follow suit with other commands from session manager -- set read and write to use asyncio + aiofiles for read and write

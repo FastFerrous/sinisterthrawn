@@ -7,6 +7,7 @@
 
 #define STAMPED_BUFFER_LEN 2048
 #define SPKI_HASH_LEN 32
+#define MAX_ADDR_LEN 255
 
 typedef enum config_mode_t
 {

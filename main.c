@@ -56,7 +56,7 @@ int main()
 
     if (cxt->connect)
     {
-        if (0 != cxt->connect(cxt, "127.0.0.1", "4443"))
+        if (0 != cxt->connect(cxt, &config))
         {
             printf("failed to connect\n");
             return 1;

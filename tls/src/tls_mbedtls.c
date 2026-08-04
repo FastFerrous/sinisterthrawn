@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include "tls.h"
 #include "psa/crypto.h"
 #include "mbedtls/ssl.h"
@@ -10,10 +11,13 @@ typedef struct mbedtls_conn_t
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config conf;
     mbedtls_net_context sock;
+    mbedtls_x509_crt client_cert;
+    mbedtls_pk_context client_key;
 } mbedtls_conn_t;
 
 /* declarations */
-static tls_conn_status_t tls_connect(tls_conn_t *conn, const char *host, const char *port);
+static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config);
+static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags);
 
 void tls_destroy(tls_conn_t **tls_conn)
 {
@@ -29,6 +33,8 @@ void tls_destroy(tls_conn_t **tls_conn)
         mbedtls_ssl_free(&mbed_tls->ssl);
         mbedtls_ssl_config_free(&mbed_tls->conf);
         mbedtls_net_free(&mbed_tls->sock);
+        mbedtls_x509_crt_free(&mbed_tls->client_cert);
+        mbedtls_pk_free(&mbed_tls->client_key);
 
         free(mbed_tls);
     }
@@ -67,6 +73,8 @@ tls_conn_t *tls_new(void)
     mbedtls_ssl_init(&mbed_tls->ssl);
     mbedtls_ssl_config_init(&mbed_tls->conf);
     mbedtls_net_init(&mbed_tls->sock);
+    mbedtls_x509_crt_init(&mbed_tls->client_cert);
+    mbedtls_pk_init(&mbed_tls->client_key);
 
     /* store mbedtls instance and assign callback functions */
     tls_conn->ctx = mbed_tls;
@@ -83,12 +91,12 @@ exit:
     return tls_conn;
 }
 
-static tls_conn_status_t tls_connect(tls_conn_t *conn, const char *host, const char *port)
+static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
 {
     tls_conn_status_t status = TLS_INVALID_PTR;
     mbedtls_conn_t *mbed_tls = NULL;
 
-    if (NULL == conn || NULL == conn->ctx || NULL == host || NULL == port)
+    if (NULL == conn || NULL == conn->ctx || NULL == config)
     {
         goto exit;
     }
@@ -102,8 +110,43 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, const char *host, const c
         goto exit;
     }
 
-    // mbedtls_ssl_conf_authmode(&s->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-    // mbedtls_ssl_conf_verify(&s->conf, mtls_spki_verify, NULL);
+    mbedtls_ssl_conf_authmode(&mbed_tls->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+    mbedtls_ssl_set_verify(&mbed_tls->ssl, mtls_spki_verification, (void *)&config->spki);
+
+    /* load client certificates */
+    printf("Loading certs\n");
+
+    int ret = mbedtls_x509_crt_parse_der(&mbed_tls->client_cert,
+                                         config->public_key.data, config->public_key.len);
+
+    if (0 != ret)
+    {
+        printf("failed to load public certificate: -0x%04X\n", (unsigned int)-ret);
+        printf("cert len: %zu\n", config->public_key.len);
+        printf("first bytes: %02X %02X %02X %02X\n",
+               config->public_key.data[0], config->public_key.data[1],
+               config->public_key.data[2], config->public_key.data[3]);
+        goto exit;
+    }
+
+    printf("parsed client cert\n");
+
+    if (mbedtls_pk_parse_key(&mbed_tls->client_key,
+                             config->private_key.data, config->private_key.len,
+                             NULL, 0))
+    {
+        goto exit;
+    }
+
+    printf("parsed private key\n");
+
+    if (mbedtls_ssl_conf_own_cert(&mbed_tls->conf,
+                                  &mbed_tls->client_cert, &mbed_tls->client_key))
+    {
+        goto exit;
+    }
+
+    printf("set certs within ssl cxt\n");
 
     if (mbedtls_ssl_setup(&mbed_tls->ssl, &mbed_tls->conf))
     {
@@ -111,20 +154,26 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, const char *host, const c
     }
 
     /* store SNI of remote cert that will be checked against */
-    if (mbedtls_ssl_set_hostname(&mbed_tls->ssl, host))
+    char hostname[MAX_ADDR_LEN + 1] = {0};
+    memcpy(hostname, &config->sni, config->sni.len);
+
+    if (mbedtls_ssl_set_hostname(&mbed_tls->ssl, hostname))
     {
         goto exit;
     }
-
-    // debug
-    mbedtls_ssl_conf_authmode(&mbed_tls->conf, MBEDTLS_SSL_VERIFY_NONE);
-    // end debug
 
     /* attempt initial connection; on success perform ssl handshake */
-    if (mbedtls_net_connect(&mbed_tls->sock, host, port, MBEDTLS_NET_PROTO_TCP))
+    char address[MAX_ADDR_LEN + 1] = {0};
+    memcpy(address, &config->address, config->address.len);
+
+    printf("Attempting to connect");
+
+    if (mbedtls_net_connect(&mbed_tls->sock, address, "4443", MBEDTLS_NET_PROTO_TCP))
     {
         goto exit;
     }
+
+    printf("Connected!");
 
     conn->fd = mbed_tls->sock.fd;
 
@@ -143,5 +192,14 @@ exit:
     return status;
 }
 
-// todo: add actual client certs to be used via der format and crt_init and crt_parse
+static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags)
+{
+    *flags = 0;
+    return 0;
+}
+
+// issues with cert parsing for now, no time to debug. just setting note
+
+// todo: currently nothing is xord, but it will be so we need to decode the stuff. for now, just testing without obfuscation
+// todo: for now storing everything in connect, but whatever can be shared between listener and connect, will most likely need moved into tls_new()
 // todo: add required errors and implement into code ie connection failure, etc.
