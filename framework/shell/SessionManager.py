@@ -87,7 +87,7 @@ class SessionManager:
                 try:
                     split_cmd = shlex.split(cmd)
                 except ValueError as format_error:
-                    self.log(format_error)
+                    self.log.info(format_error)
                     continue
 
                 if split_cmd[0] not in self.commands:
@@ -213,7 +213,7 @@ class SessionManager:
 
         table = PrettyTable(["Index", "Session Name", "Session UUID", "Address"])
         for idx, (s_uid, session) in enumerate(self.sessions.items()):
-            table.add_row([idx, session.name, s_uid, self.session.addr])
+            table.add_row([idx, session.name, s_uid, session.addr])
         print(table)
 
         return SessionManagerErrors.SUCCESS

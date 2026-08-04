@@ -5,6 +5,7 @@
 #include "patch.h"
 
 #define INVALID_SOCKFD -1
+#define GENERIC_TLS_FAILURE -1
 
 typedef enum tls_conn_status_t
 {
@@ -35,5 +36,3 @@ tls_conn_t *tls_new(void);
 void tls_destroy(tls_conn_t **tls_conn);
 
 #endif
-
-// tls_conn_status_t (*connect)(struct tls_conn_t *conn, const char *host, const char *port); -- removed for testing stamped config
