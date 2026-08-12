@@ -48,7 +48,7 @@ int main()
     /* end debug */
 
     /* create temporary debug connection */
-    tls_conn_t *cxt = tls_new();
+    tls_conn_t *cxt = tls_new(&config);
     if (NULL == cxt)
     {
         return 1;
@@ -74,11 +74,8 @@ int main()
     return 0;
 }
 
-// todo: modify tls structures to take in the config structure rather than host and port, tls will need to decode values before use, etc.
-// todo: once client <-> server are working with mtls, perform small echo and then start taskings
-
 // main.c is purely debug really, will reorg once mtls has been built
 
-// todo: work on poll to provide both static and dynamic arrays, currently only supports static
+// todo: work on poll to provide both static and dynamic arrays + callbacks, currently only supports static
 // todo: create root build.sh that will eventually wrap the build_deps.sh and perform all in one go
 // todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc.

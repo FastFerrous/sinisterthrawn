@@ -6,6 +6,7 @@
 
 #define INVALID_SOCKFD -1
 #define GENERIC_TLS_FAILURE -1
+#define MAXIMUM_PORT_STR_LEN 6
 
 typedef enum tls_conn_status_t
 {
@@ -30,7 +31,7 @@ typedef struct tls_conn_t
 } tls_conn_t;
 
 /* opaque function that performs specified tls libraries initialization */
-tls_conn_t *tls_new(void);
+tls_conn_t *tls_new(stamped_config_t *config);
 
 /* opaque function that performs specified tls libraries cleanup */
 void tls_destroy(tls_conn_t **tls_conn);

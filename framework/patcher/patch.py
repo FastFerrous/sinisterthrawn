@@ -128,6 +128,8 @@ class Patcher:
             self.log.info(f"length of provided key or certificate exceeds the maximum length of {self.MAX_DER_LEN} bytes")
             return None 
 
+        xor_key = randbytes(1)[0]
+        
         sni_bytes = self.sni.encode() if self.sni else b""
         if len(sni_bytes) > self.MAX_SNI_LEN:
             self.log.info(f"SNI exceeds maximum of {self.MAX_SNI_LEN} bytes")
@@ -138,12 +140,15 @@ class Patcher:
             self.log.info(f"Address length exceeds maximum of {self.MAX_ADDR_LEN} bytes")
             return None 
 
+        sni_bytes = bytes(b ^ xor_key for b in sni_bytes)
+        addr_bytes = bytes(b ^ xor_key for b in addr_bytes)
+
         PATCH_FMT = f"!BBBH{len(spki)}sBHH{len(addr_bytes)}s{len(public_key)}s{len(private_key)}sHBB{len(sni_bytes)}s"
 
         try: 
             patch = struct.pack(
                 PATCH_FMT, 
-                randbytes(1)[0], 
+                xor_key, 
                 self.mode, 
                 self.sleep, 
                 self.port,
