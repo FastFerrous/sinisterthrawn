@@ -219,6 +219,10 @@ exit:
     return status;
 }
 
+/*
+ * callback function supplied to mbedtls to peform validation of the SPKI within the presented public key
+ * validation is performed by extracting teh SPKI, hashing it with SHA256 and comparing whether it matches our expected stamped value
+ */
 static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags)
 {
     int result = GENERIC_TLS_FAILURE;
@@ -285,4 +289,9 @@ exit:
     return decoded_str;
 }
 
+// todo: next, add listener on this side and connection on python side. once done, we can work echo server
+// todo: once echo server is done, we can start working actual event library so we can poll properly with callbacks, etc.
+// todo: need to design threading functionality that will be called on inbound clients or even connect out. a single entry point for handling clients
+
 // todo: add required errors and implement into code ie connection failure, etc.
+// todo: once all is done, ensure tests with valgrind are performed

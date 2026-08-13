@@ -17,6 +17,7 @@ from shell.Parser import (
     parse_kill_listener_args,
     parse_interact_args,
     parse_kill_session_args,
+    parse_connect_args,
 )
 from patcher.patch import Patcher
 
@@ -95,6 +96,35 @@ class SessionManager:
                     continue
 
                 await self.commands[split_cmd[0]](split_cmd[1:])
+
+    async def connect(self, args) -> SessionManagerErrors:
+        """Uses supplied values to perform tls connection to remote host"""
+
+        usage: str = "connect -i <address> -p <port> --certs <cert dir>"
+
+        # validate args length is non zero and then pass to argparse
+        if len(args) == 0:
+            self.log.info(usage)
+            return SessionManagerErrors.INVALID_ARGS
+
+        parsed_args = parse_connect_args(args, usage)
+        if parsed_args is None:
+            return SessionManagerErrors.INVALID_ARGS
+
+        # create tls instance and attempt connection
+        tls = Tls(parsed_args.ip, parsed_args.port, parsed_args.certs, Mode.CLIENT)
+
+        await tls.connect(parsed_args.timeout, self._on_connect)
+
+        # if not await listener.create_listener(self._on_connect):
+        #     return SessionManagerErrors.UNABLE_TO_LISTEN
+
+        # task = asyncio.create_task(listener.start_listener())
+        # task_id = uuid4()
+
+        # self.listeners[task_id] = ListenerEntry(task=task, tls=listener)
+
+        return SessionManagerErrors.SUCCESS
 
     async def listen(self, args: list) -> SessionManagerErrors:
         """Uses supplied values to craft a Tls `listener` that awaits inbound connections"""
@@ -296,7 +326,3 @@ class SessionManager:
                     pass
 
             self.log.debug(f"Closed remote session: {session.session_id}")
-
-    # todo: connect
-    async def connect(self, args):
-        pass

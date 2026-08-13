@@ -411,5 +411,3 @@ class Patcher:
         )
 
         return True
-
-
