@@ -54,7 +54,7 @@ class SessionManager:
             "show_listeners": self.show_listeners,
             "show_sessions": self.show_sessions,
             "interact": self.interact,
-            "stamp": self.stamp
+            "stamp": self.stamp,
         }
         self.session: PromptSession = PromptSession(
             completer=WordCompleter(sorted(self.commands), sentence=True),
@@ -266,11 +266,11 @@ class SessionManager:
             self.log.info(usage)
             return SessionManagerErrors.INVALID_ARGS
 
-        if not Patcher().patch_binary(args, usage):
+        if not await Patcher().patch_binary(args, usage):
             return SessionManagerErrors.INVALID_ARGS
 
-        return SessionManagerErrors.SUCCESS   
-            
+        return SessionManagerErrors.SUCCESS
+
     async def exit(self, _):
         self.is_running = False
 
@@ -300,4 +300,3 @@ class SessionManager:
     # todo: connect
     async def connect(self, args):
         pass
-
