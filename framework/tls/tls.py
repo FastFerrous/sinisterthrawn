@@ -52,7 +52,7 @@ class Tls:
             ctx.load_verify_locations(f"{self.certs}/ca.crt")
             ctx.verify_mode = ssl.CERT_REQUIRED
 
-        except FileNotFoundError as error:
+        except (PermissionError, FileNotFoundError, ssl.SSLError) as error:
             self.log.warning(f"{error}")
             return False
 
@@ -142,14 +142,8 @@ class Tls:
             return None
 
         if spki_hash != expected_spki:
-            self.log.info("SPKI Mismatch!")
+            self.log.info("Remote endpoint does not match expected SPKI hash, terminating connection")
             await self._close_writer(writer)
             return None
 
         await on_connect_cb(reader, writer)
-        return None
-
-
-# add logging for errors within the connect, ie failures on hash mismatches, etc.
-# change certs to local and remote. makes more sense than client/server in this instance
-# check permissions on certs. check with making them only readable by root and then trying to load via certs directory. may need to add that except

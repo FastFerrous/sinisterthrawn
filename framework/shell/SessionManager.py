@@ -113,18 +113,7 @@ class SessionManager:
 
         # create tls instance and attempt connection
         tls = Tls(parsed_args.ip, parsed_args.port, parsed_args.certs, Mode.CLIENT)
-
         await tls.connect(parsed_args.timeout, self._on_connect)
-
-        # if not await listener.create_listener(self._on_connect):
-        #     return SessionManagerErrors.UNABLE_TO_LISTEN
-
-        # task = asyncio.create_task(listener.start_listener())
-        # task_id = uuid4()
-
-        # self.listeners[task_id] = ListenerEntry(task=task, tls=listener)
-
-        return SessionManagerErrors.SUCCESS
 
     async def listen(self, args: list) -> SessionManagerErrors:
         """Uses supplied values to craft a Tls `listener` that awaits inbound connections"""

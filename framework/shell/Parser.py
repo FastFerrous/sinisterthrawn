@@ -154,7 +154,7 @@ def parse_connect_args(args: list, help_str: str) -> Optional[argparse.Namespace
     )
     parser.add_argument("-p", "--port", type=int, required=True, help="remote port")
     parser.add_argument(
-        "-t", "--timeout", type=int, default=5, required=True, help="connection timeout"
+        "-t", "--timeout", type=int, default=5, required=False, help="connection timeout"
     )
     parser.add_argument(
         "--certs", type=Path, required=True, help="directory with required certificates"

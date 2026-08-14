@@ -46,5 +46,5 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 # need to create some kind of queue that tracks session manager logs when user is interactive with a session. these would be replayed post exit back to framework
-# need to work connect
 # also track states really well between sessions, ie disconnection occurs, etc.
+# change certs to local and remote. makes more sense than client/server in this instance -- so far needs changed in cert_gen.sh, patch.py and tls.py
