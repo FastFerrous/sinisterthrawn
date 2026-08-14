@@ -25,9 +25,10 @@ typedef struct tls_conn_t
 
     /* tls library vtable */
     tls_conn_status_t (*connect)(struct tls_conn_t *conn, stamped_config_t *config);
+    tls_conn_status_t (*listen)(struct tls_conn_t *conn, stamped_config_t *config);
     int (*send)(struct tls_conn_t *conn, const unsigned char *buf, size_t len);
     int (*recv)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
-    void (*close)(struct tls_conn_t *conn);
+    // void (*close)(struct tls_conn_t *conn);
 } tls_conn_t;
 
 /* opaque function that performs specified tls libraries initialization */

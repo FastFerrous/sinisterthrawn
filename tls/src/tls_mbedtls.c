@@ -18,6 +18,7 @@ typedef struct mbedtls_conn_t
 
 /* declarations */
 static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config);
+static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config);
 static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags);
 static char *decode_str_data(Slice *slice, uint8_t key);
 
@@ -94,7 +95,7 @@ tls_conn_t *tls_new(stamped_config_t *config)
     }
 
     mbedtls_ssl_conf_authmode(&mbed_tls->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-    mbedtls_ssl_set_verify(&mbed_tls->ssl, mtls_spki_verification, (void *)&config->spki);
+    mbedtls_ssl_conf_verify(&mbed_tls->conf, mtls_spki_verification, (void *)&config->spki);
 
     /* load public and private keys for use during handshake and register within mbedtls */
     if (0 != mbedtls_x509_crt_parse_der(&mbed_tls->client_cert,
@@ -124,6 +125,7 @@ tls_conn_t *tls_new(stamped_config_t *config)
     /* store mbedtls instance and assign callback functions */
     tls_conn->ctx = mbed_tls;
     tls_conn->connect = tls_connect;
+    tls_conn->listen = tls_listen;
 
     status = true;
 
@@ -219,6 +221,54 @@ exit:
     return status;
 }
 
+static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config)
+{
+    tls_conn_status_t status = TLS_INVALID_PTR;
+    mbedtls_conn_t *mbed_tls = NULL;
+    char *address = NULL;
+    char *hostname = NULL;
+    char port[MAXIMUM_PORT_STR_LEN] = {0};
+
+    if (NULL == conn || NULL == conn->ctx || NULL == config)
+    {
+        goto exit;
+    }
+
+    /* cast opaque pointer to underlying mbedtls structure for setup and configuration */
+    mbed_tls = (mbedtls_conn_t *)conn->ctx;
+
+    address = decode_str_data(&config->address, config->key);
+    if (NULL == address)
+    {
+        goto exit;
+    }
+
+    int result = snprintf(port, MAXIMUM_PORT_STR_LEN, "%u", config->port);
+    if (0 > result || result >= MAXIMUM_PORT_STR_LEN)
+    {
+        goto exit;
+    }
+
+    /* attempt to bind on specified address and port */
+    if (0 != mbedtls_net_bind(&mbed_tls->sock, (const char *)address, (const char *)port, MBEDTLS_NET_PROTO_TCP))
+    {
+        goto exit;
+    }
+
+    // pool loop waiting for cancellation and/or connections. will call accept once event has been triggered and will allocate and thread client
+    // requires to setup ssl context for each client
+    // set ssl bio
+    // pthreadcreate and detach
+
+exit:
+    if (address)
+    {
+        free(address);
+    }
+
+    return status;
+}
+
 /*
  * callback function supplied to mbedtls to peform validation of the SPKI within the presented public key
  * validation is performed by extracting teh SPKI, hashing it with SHA256 and comparing whether it matches our expected stamped value
@@ -289,9 +339,20 @@ exit:
     return decoded_str;
 }
 
-// todo: next, add listener on this side and connection on python side. once done, we can work echo server
-// todo: once echo server is done, we can start working actual event library so we can poll properly with callbacks, etc.
+// once config is parsed, check whether we are a server. if so, create cancellation token and pass that in as well
+// listener will forever bind and listen until that has been cancelled via program, etc.
+
 // todo: need to design threading functionality that will be called on inbound clients or even connect out. a single entry point for handling clients
 
 // todo: add required errors and implement into code ie connection failure, etc.
 // todo: once all is done, ensure tests with valgrind are performed
+
+/*
+
+client struct
+token
+ssl context (fd, etc. )
+mode
+    // within the thread, or "function" if its not client, it will add that event, etc. basically ignoring if not a server mode
+
+*/
