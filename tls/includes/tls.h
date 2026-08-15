@@ -30,7 +30,7 @@ typedef struct tls_conn_t
     tls_conn_status_t (*listen)(struct tls_conn_t *conn, stamped_config_t *config, CancellationToken *token);
     int (*send)(struct tls_conn_t *conn, const unsigned char *buf, size_t len);
     int (*recv)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
-    // void (*destroy)(struct tls_conn_t *conn);
+    void (*destroy)(void *ctx);
 } tls_conn_t;
 
 /* opaque function that performs specified tls libraries initialization */

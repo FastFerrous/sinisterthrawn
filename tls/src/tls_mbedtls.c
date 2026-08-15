@@ -532,5 +532,7 @@ exit:
 // todo: ensure we are requesting the token within listener so that we are seen as holding a reference
 // todo: add required errors and implement throughout code, ie connection failure, etc.
 // todo: within handle inbound clients callback, handle errors as well, token will need cancelled on critical errors
+
 // todo: create custom destroy functions for the session cleanup and tls_new init structure. sessions are slightly smaller -- link in vtable
+
 // todo: once all is done, ensure tests with valgrind are performed along with clang-tidy

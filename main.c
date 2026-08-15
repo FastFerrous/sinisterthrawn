@@ -26,9 +26,6 @@ void print_config(const stamped_config_t *config)
     }
     printf("\n");
 
-    printf("address:     %.*s\n", (int)config->address.len, config->address.data);
-    printf("sni:         %.*s\n", (int)config->sni.len, config->sni.data);
-
     printf("public_key:  %llu bytes\n", (unsigned long long)config->public_key.len);
     printf("private_key: %llu bytes\n", (unsigned long long)config->private_key.len);
 }
