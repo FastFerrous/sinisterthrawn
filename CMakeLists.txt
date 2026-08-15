@@ -28,14 +28,16 @@ endif()
 # temporary, will be eventually behind a make flag for specifying which comms proto to include
 file(GLOB TLS_SOURCES "${CMAKE_SOURCE_DIR}/tls/src/*.c")
 
+file(GLOB SESSIONS_SOURCES "${CMAKE_SOURCE_DIR}/sessions/src/*.c")
 file(GLOB UTIL_SOURCES "${CMAKE_SOURCE_DIR}/util/src/*.c")
 file(GLOB PATCH_SOURCES "${CMAKE_SOURCE_DIR}/patch/src/*.c")
-add_executable(sith main.c ${TLS_SOURCES} ${UTIL_SOURCES} ${PATCH_SOURCES})
+add_executable(sith main.c ${TLS_SOURCES} ${UTIL_SOURCES} ${PATCH_SOURCES} ${SESSIONS_SOURCES})
 
 target_include_directories(sith PRIVATE
     "${CMAKE_SOURCE_DIR}/patch/includes"
     "${CMAKE_SOURCE_DIR}/util/includes"
     "${CMAKE_SOURCE_DIR}/tls/includes"
+    "${CMAKE_SOURCE_DIR}/sessions/includes"
     "${MBEDTLS_DIR}/include"
     "${MBEDTLS_DIR}/tf-psa-crypto/include"
     "${MBEDTLS_DIR}/tf-psa-crypto/drivers/builtin/include"

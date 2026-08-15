@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "tls.h"
 #include "patch.h"
+#include "token.h"
 
 /* debug */
 #include <unistd.h>
@@ -45,6 +46,9 @@ int main()
 
     /* debug */
     print_config(&config);
+
+    CancellationToken *token = token_create();
+
     /* end debug */
 
     /* create temporary debug connection */
@@ -54,19 +58,27 @@ int main()
         return 1;
     }
 
-    // check mode, if connect, call connect and pass tls_conn into the function that handles the client connection
-    // if server, go into listen and we wait here until we return.
-
-    if (cxt->connect)
+    switch (config.mode)
     {
-        if (0 != cxt->connect(cxt, &config))
+    case CALLBACK:
+        if (cxt->connect)
         {
-            printf("failed to connect\n");
-            return 1;
+            if (0 != cxt->connect(cxt, &config))
+            {
+                printf("failed to connect\n");
+                return 1;
+            }
+            printf("connected to server\n");
+            sleep(10);
         }
-        printf("connected to server\n");
+        break;
 
-        sleep(10);
+    case LISTEN:
+        cxt->listen(cxt, &config, token);
+        break;
+
+    default:
+        break;
     }
 
     if (cxt)

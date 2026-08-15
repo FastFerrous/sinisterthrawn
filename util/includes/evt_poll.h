@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <sys/epoll.h>
 
+#define EPOLL_INDEFINITE -1
 #define EPOLL_GENERIC_ERR -1
 #define INITIAL_POLL_EVENTS 8
 #define DOUBLE_POLL_EVENTS 2

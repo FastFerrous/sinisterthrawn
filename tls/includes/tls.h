@@ -19,7 +19,7 @@ typedef enum tls_conn_status_t
 
 typedef struct tls_conn_t
 {
-    /* opaque pointer into library specific context ie mbedTLS, openSSL, etc. */
+    /* opaque pointer into library specific contexts ie mbedTLS, openSSL, etc. */
     void *ctx;
 
     /* underlying fd used within the context; shared for event monitoring, if needed */

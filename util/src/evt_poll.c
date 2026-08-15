@@ -6,6 +6,13 @@
 #include <string.h>
 #include "evt_poll.h"
 
+typedef struct poll_entry_t
+{
+    int fd;
+    poll_callback_t cb;
+    void *cb_data;
+} poll_entry_t;
+
 typedef struct poll_ctx_t
 {
     int epoll_fd;
@@ -13,13 +20,6 @@ typedef struct poll_ctx_t
     uint8_t count;
     uint8_t capacity;
 } poll_ctx_t;
-
-typedef struct poll_entry_t
-{
-    int fd;
-    poll_callback_t cb;
-    void *cb_data;
-} poll_entry_t;
 
 /*
  * searches for supplied fd within epoll poll_ctx structure

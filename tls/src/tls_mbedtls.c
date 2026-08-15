@@ -1,9 +1,11 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include <sys/socket.h>
+#include <pthread.h>
 #include <sys/time.h>
+#include <sys/socket.h>
 #include "tls.h"
+#include "sessions.h"
 #include "evt_poll.h"
 #include "psa/crypto.h"
 #include "mbedtls/ssl.h"
@@ -398,6 +400,8 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
 {
     bool status = false;
     mbedtls_session_t *client = NULL;
+    tls_conn_t *tls_conn = NULL;
+    session_ctx_t *session = NULL;
 
     if (INVALID_EVENTFD_DESCRIPTOR == fd || NULL == ctx)
     {
@@ -455,12 +459,8 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
     time_t start_time = time(NULL);
     while (0 != (ret = mbedtls_ssl_handshake(&client->ssl)))
     {
-        switch (ret)
+        if (!(MBEDTLS_ERR_SSL_WANT_READ == ret || MBEDTLS_ERR_SSL_WANT_WRITE == ret))
         {
-        case MBEDTLS_ERR_SSL_WANT_READ:
-        case MBEDTLS_ERR_SSL_WANT_WRITE:
-            break;
-        default:
             goto exit;
         }
 
@@ -470,13 +470,45 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
         }
     }
 
-    // this is where we would create our thread and pass the client structure along with teh token, etc. into the actual client handler -- use time(NULL) and difftime
+    /* create session structure for client sessions and spawn child thread  */
+    tls_conn = calloc(1, sizeof(tls_conn_t));
+    if (NULL == tls_conn)
+    {
+        goto exit;
+    }
+
+    session = calloc(1, sizeof(session_ctx_t));
+    if (NULL == session)
+    {
+        goto exit;
+    }
+
+    tls_conn->ctx = client;
+    tls_conn->fd = client->sock.fd;
+    // tls_conn->recv = tls_recv();
+    // tls_conn->send = tls_send();
+    // tls_conn->destroy = tls_destroy_client();
+
+    session->conn = tls_conn;
+    session->token = listener_cxt->token;
+
+    pthread_t tid = 0;
+    if (0 != pthread_create(&tid, NULL, client_session_repl, (void *)session))
+    {
+        goto exit;
+    }
+
+    /*
+     * detaching thread as the token will be signaled when the tokens need to be closed
+     * when tokens are shared amongst threads, those threads will all `acquire` the token, therefore creating a reference
+     * during token destroy within the main thread, it will not terminate the program until the references have dropped to 0 or the timeout has occured
+     * indicating a critical error on teardown anyway
+     */
+    pthread_detach(tid);
 
     status = true;
 
 exit:
-    // same for session since we have to allocate that structure as well as the tls_conn structure
-
     if (!status && client)
     {
         mbedtls_ssl_free(&client->ssl);
@@ -484,20 +516,21 @@ exit:
         free(client);
     }
 
+    if (!status && tls_conn)
+    {
+        free(tls_conn);
+    }
+
+    if (!status && session)
+    {
+        free(session);
+    }
+
     return;
 }
 
-// within the handle inbound clients for any larg error like alloc, we need to cancel the token, etc.
-
-/* this is in the session.c and sesion.h -- wraps the tls_conn_t and the token, this gets supplied as the void *param in the function handler
-typedef struct session_ctx_t
-{
-    tls_conn_t *conn;
-    cancel_token_t *token;
-} session_ctx_t;
-*/
-
-// create two destroys that get added into the vtable for freeing connectiosn out vs server mode ctx -- ie the public api for destroy will use the vtable to call the assigned destroy
-
-// todo: add required errors and implement into code ie connection failure, etc. currently just using invalid ptr or success
-// todo: once all is done, ensure tests with valgrind are performed
+// todo: ensure we are requesting the token within listener so that we are seen as holding a reference
+// todo: add required errors and implement throughout code, ie connection failure, etc.
+// todo: within handle inbound clients callback, handle errors as well, token will need cancelled on critical errors
+// todo: create custom destroy functions for the session cleanup and tls_new init structure. sessions are slightly smaller -- link in vtable
+// todo: once all is done, ensure tests with valgrind are performed along with clang-tidy
