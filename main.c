@@ -54,6 +54,9 @@ int main()
         return 1;
     }
 
+    // check mode, if connect, call connect and pass tls_conn into the function that handles the client connection
+    // if server, go into listen and we wait here until we return.
+
     if (cxt->connect)
     {
         if (0 != cxt->connect(cxt, &config))
@@ -75,7 +78,5 @@ int main()
 }
 
 // main.c is purely debug really, will reorg once mtls has been built
-
-// todo: work on poll to provide both static and dynamic arrays + callbacks, currently only supports static
 // todo: create root build.sh that will eventually wrap the build_deps.sh and perform all in one go
 // todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc.

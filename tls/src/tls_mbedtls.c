@@ -1,7 +1,10 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include "tls.h"
+#include "evt_poll.h"
 #include "psa/crypto.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/net_sockets.h"
@@ -16,35 +19,33 @@ typedef struct mbedtls_conn_t
     mbedtls_pk_context client_key;
 } mbedtls_conn_t;
 
+/*
+ * upon accepting inbound clients, each session needs to have their own ssl and net context
+ * a new tls_conn_t structure will be allocated for each inbound client and this structure will serve as the the opaque `ctx`
+ * these structures are only tied to new inbound connections, not to the actual listener's tls_conn_t->ctx structure
+ */
+typedef struct mbedtls_session_t
+{
+    mbedtls_ssl_context ssl;
+    mbedtls_net_context sock;
+} mbedtls_session_t;
+
+/*
+ * callback args structure used for use with evt_poll'ing when registering cb, `on_accept`, for handling new clients in SERVER mode
+ * mbedtls_conn_t is the listener structure and token is used to supply to the session handler for thread synch
+ */
+typedef struct mbedtls_listener_ctx_t
+{
+    mbedtls_conn_t *mbed_tls;
+    CancellationToken *token;
+} mbedtls_listener_ctx_t;
+
 /* declarations */
 static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config);
-static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config);
+static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, CancellationToken *token);
 static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags);
 static char *decode_str_data(Slice *slice, uint8_t key);
-
-void tls_destroy(tls_conn_t **tls_conn)
-{
-    if (NULL == tls_conn || NULL == *tls_conn)
-    {
-        return;
-    }
-
-    if ((*tls_conn)->ctx)
-    {
-        mbedtls_conn_t *mbed_tls = (mbedtls_conn_t *)(*tls_conn)->ctx;
-
-        mbedtls_ssl_free(&mbed_tls->ssl);
-        mbedtls_ssl_config_free(&mbed_tls->conf);
-        mbedtls_net_free(&mbed_tls->sock);
-        mbedtls_x509_crt_free(&mbed_tls->client_cert);
-        mbedtls_pk_free(&mbed_tls->client_key);
-
-        free(mbed_tls);
-    }
-
-    free(*tls_conn);
-    *tls_conn = NULL;
-}
+static void handle_inbound_clients(int fd, uint32_t events, void *ctx);
 
 tls_conn_t *tls_new(stamped_config_t *config)
 {
@@ -77,6 +78,9 @@ tls_conn_t *tls_new(stamped_config_t *config)
     {
         goto exit;
     }
+
+    /* store underlying mbedtls instance */
+    tls_conn->ctx = mbed_tls;
 
     mbedtls_ssl_init(&mbed_tls->ssl);
     mbedtls_ssl_config_init(&mbed_tls->conf);
@@ -122,8 +126,7 @@ tls_conn_t *tls_new(stamped_config_t *config)
         goto exit;
     }
 
-    /* store mbedtls instance and assign callback functions */
-    tls_conn->ctx = mbed_tls;
+    /* assign callback functions */
     tls_conn->connect = tls_connect;
     tls_conn->listen = tls_listen;
 
@@ -136,6 +139,30 @@ exit:
     }
 
     return tls_conn;
+}
+
+void tls_destroy(tls_conn_t **tls_conn)
+{
+    if (NULL == tls_conn || NULL == *tls_conn)
+    {
+        return;
+    }
+
+    if ((*tls_conn)->ctx)
+    {
+        mbedtls_conn_t *mbed_tls = (mbedtls_conn_t *)(*tls_conn)->ctx;
+
+        mbedtls_ssl_free(&mbed_tls->ssl);
+        mbedtls_ssl_config_free(&mbed_tls->conf);
+        mbedtls_net_free(&mbed_tls->sock);
+        mbedtls_x509_crt_free(&mbed_tls->client_cert);
+        mbedtls_pk_free(&mbed_tls->client_key);
+
+        free(mbed_tls);
+    }
+
+    free(*tls_conn);
+    *tls_conn = NULL;
 }
 
 static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
@@ -221,12 +248,12 @@ exit:
     return status;
 }
 
-static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config)
+static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, CancellationToken *token)
 {
     tls_conn_status_t status = TLS_INVALID_PTR;
     mbedtls_conn_t *mbed_tls = NULL;
     char *address = NULL;
-    char *hostname = NULL;
+    poll_ctx_t *ctx = NULL;
     char port[MAXIMUM_PORT_STR_LEN] = {0};
 
     if (NULL == conn || NULL == conn->ctx || NULL == config)
@@ -255,12 +282,36 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config)
         goto exit;
     }
 
-    // pool loop waiting for cancellation and/or connections. will call accept once event has been triggered and will allocate and thread client
-    // requires to setup ssl context for each client
-    // set ssl bio
-    // pthreadcreate and detach
+    /* register socket and await inbound connections as long as the token has not been signaled to shutdown */
+    mbedtls_listener_ctx_t listener_ctx = {
+        .mbed_tls = mbed_tls,
+        .token = token};
+
+    ctx = pollctx_create();
+    if (NULL == ctx)
+    {
+        goto exit;
+    }
+
+    if (EVT_POLL_SUCCESS != pollctx_register(ctx, mbed_tls->sock.fd, EPOLLIN, handle_inbound_clients, &listener_ctx))
+    {
+        goto exit;
+    }
+
+    while (!token_is_cancelled((const CancellationToken *)token))
+    {
+        if (EPOLL_GENERIC_ERR == pollctx_dispatch(ctx, SOCKET_TIMEOUT))
+        {
+            goto exit;
+        }
+    }
 
 exit:
+    if (ctx)
+    {
+        pollctx_destroy(&ctx);
+    }
+
     if (address)
     {
         free(address);
@@ -339,20 +390,114 @@ exit:
     return decoded_str;
 }
 
-// once config is parsed, check whether we are a server. if so, create cancellation token and pass that in as well
-// listener will forever bind and listen until that has been cancelled via program, etc.
-
-// todo: need to design threading functionality that will be called on inbound clients or even connect out. a single entry point for handling clients
-
-// todo: add required errors and implement into code ie connection failure, etc.
-// todo: once all is done, ensure tests with valgrind are performed
-
 /*
+ * callback function used to handle inbound clients
+ * callback will allocate a new tls_conn_t structure and assign required vtable addresses for session use
+ */
+static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
+{
+    bool status = false;
+    mbedtls_session_t *client = NULL;
 
-client struct
-token
-ssl context (fd, etc. )
-mode
-    // within the thread, or "function" if its not client, it will add that event, etc. basically ignoring if not a server mode
+    if (INVALID_EVENTFD_DESCRIPTOR == fd || NULL == ctx)
+    {
+        goto exit;
+    }
 
+    if (!(events & EPOLLIN))
+    {
+        goto exit;
+    }
+
+    /* casting back so that we are able to access the listener socket as well as the cancellation token as new clients will be provided that for synchronization */
+    mbedtls_listener_ctx_t *listener_cxt = (mbedtls_listener_ctx_t *)ctx;
+
+    /* allocate client mbedtls structure that will be stored within the generic tls_conn_t for each session */
+    client = calloc(1, sizeof(mbedtls_session_t));
+    if (NULL == client)
+    {
+        goto exit;
+    }
+
+    mbedtls_ssl_init(&client->ssl);
+    mbedtls_net_init(&client->sock);
+
+    /* accept inbound connection and apply ssl configuration to new socket */
+    if (0 != mbedtls_net_accept(&listener_cxt->mbed_tls->sock, &client->sock, NULL, 0, NULL))
+    {
+        goto exit;
+    }
+
+    if (0 != mbedtls_ssl_setup(&client->ssl, &listener_cxt->mbed_tls->conf))
+    {
+        goto exit;
+    }
+
+    mbedtls_ssl_set_bio(&client->ssl, &client->sock, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+    /* set send/recv timeouts for client socket operations */
+    struct timeval tv = {
+        .tv_sec = SOCKET_TIMEOUT,
+        .tv_usec = 0};
+
+    if (-1 == setsockopt(client->sock.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(struct timeval)))
+    {
+        goto exit;
+    }
+
+    if (-1 == setsockopt(client->sock.fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(struct timeval)))
+    {
+        goto exit;
+    }
+
+    /* attempt to perform ssl handshake */
+    int ret = 0;
+    time_t start_time = time(NULL);
+    while (0 != (ret = mbedtls_ssl_handshake(&client->ssl)))
+    {
+        switch (ret)
+        {
+        case MBEDTLS_ERR_SSL_WANT_READ:
+        case MBEDTLS_ERR_SSL_WANT_WRITE:
+            break;
+        default:
+            goto exit;
+        }
+
+        if (SOCKET_TIMEOUT <= difftime(time(NULL), start_time))
+        {
+            goto exit;
+        }
+    }
+
+    // this is where we would create our thread and pass the client structure along with teh token, etc. into the actual client handler -- use time(NULL) and difftime
+
+    status = true;
+
+exit:
+    // same for session since we have to allocate that structure as well as the tls_conn structure
+
+    if (!status && client)
+    {
+        mbedtls_ssl_free(&client->ssl);
+        mbedtls_net_free(&client->sock);
+        free(client);
+    }
+
+    return;
+}
+
+// within the handle inbound clients for any larg error like alloc, we need to cancel the token, etc.
+
+/* this is in the session.c and sesion.h -- wraps the tls_conn_t and the token, this gets supplied as the void *param in the function handler
+typedef struct session_ctx_t
+{
+    tls_conn_t *conn;
+    cancel_token_t *token;
+} session_ctx_t;
 */
+
+// create two destroys that get added into the vtable for freeing connectiosn out vs server mode ctx -- ie the public api for destroy will use the vtable to call the assigned destroy
+
+// todo: add required errors and implement into code ie connection failure, etc. currently just using invalid ptr or success
+// todo: once all is done, ensure tests with valgrind are performed
