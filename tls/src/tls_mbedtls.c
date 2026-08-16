@@ -163,12 +163,6 @@ void tls_destroy(tls_conn_t **tls_conn)
         free((*tls_conn)->ctx);
     }
 
-    /*
-     * this will completely tear down all mbedtls application data, should only be called once all clients have been shutdown, if applicable
-     * tls_destroy() should ideally be the last cleanup to occur within main programs execution to ensure all clients have been torn down gracefully
-     */
-    mbedtls_psa_crypto_free();
-
     free(*tls_conn);
     *tls_conn = NULL;
 }
@@ -416,6 +410,12 @@ static void destroy_tls_conn(void *ctx)
     mbedtls_net_free(&mbed_tls->sock);
     mbedtls_x509_crt_free(&mbed_tls->client_cert);
     mbedtls_pk_free(&mbed_tls->client_key);
+
+    /*
+     * this will completely tear down all mbedtls application data, should only be called once all clients have been shutdown, if applicable
+     * tls_destroy() should ideally be the last cleanup to occur within main programs execution to ensure all clients have been torn down gracefully
+     */
+    mbedtls_psa_crypto_free();
 
     return;
 }
