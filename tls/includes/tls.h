@@ -12,9 +12,20 @@
 
 typedef enum tls_conn_status_t
 {
+    /*
+     * most return values will have mappings from generic <-> underlying library
+     * however, in case of library specific errors that are non generic, the `TLS_INTERNAL_ERR` will be used
+     */
+
     TLS_SUCCESS,
     TLS_INVALID_PTR,
-    TLS_INVALID_PORT
+    TLS_INVALID_ARGS,
+    TLS_HANDSHAKE_ERR,
+    TLS_CONNECT_ERR,
+    TLS_BIND_ERR,
+    TLS_READ_ERR,
+    TLS_WRITE_ERR,
+    TLS_INTERNAL_ERR,
 } tls_conn_status_t;
 
 typedef struct tls_conn_t

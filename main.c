@@ -88,4 +88,4 @@ int main()
 
 // main.c is purely debug really, will reorg once mtls has been built
 // todo: create root build.sh that will eventually wrap the build_deps.sh and perform all in one go
-// todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc.
+// todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc. mbedtls/include/mbedtls/mbedtls_config.h

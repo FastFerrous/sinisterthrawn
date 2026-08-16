@@ -48,6 +48,8 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, 
 static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags);
 static char *decode_str_data(Slice *slice, uint8_t key);
 static void handle_inbound_clients(int fd, uint32_t events, void *ctx);
+static void destroy_client_session(void *ctx);
+static void destroy_tls_conn(void *ctx);
 
 tls_conn_t *tls_new(stamped_config_t *config)
 {
@@ -131,6 +133,7 @@ tls_conn_t *tls_new(stamped_config_t *config)
     /* assign callback functions */
     tls_conn->connect = tls_connect;
     tls_conn->listen = tls_listen;
+    tls_conn->destroy = destroy_tls_conn;
 
     status = true;
 
@@ -150,17 +153,10 @@ void tls_destroy(tls_conn_t **tls_conn)
         return;
     }
 
-    if ((*tls_conn)->ctx)
+    if ((*tls_conn)->destroy && ((*tls_conn)->ctx))
     {
-        mbedtls_conn_t *mbed_tls = (mbedtls_conn_t *)(*tls_conn)->ctx;
-
-        mbedtls_ssl_free(&mbed_tls->ssl);
-        mbedtls_ssl_config_free(&mbed_tls->conf);
-        mbedtls_net_free(&mbed_tls->sock);
-        mbedtls_x509_crt_free(&mbed_tls->client_cert);
-        mbedtls_pk_free(&mbed_tls->client_key);
-
-        free(mbed_tls);
+        ((*tls_conn)->destroy((*tls_conn)->ctx));
+        free((*tls_conn)->ctx);
     }
 
     free(*tls_conn);
@@ -187,11 +183,13 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
     hostname = decode_str_data(&config->sni, config->key);
     if (NULL == hostname)
     {
+        status = TLS_INVALID_ARGS;
         goto exit;
     }
 
     if (mbedtls_ssl_set_hostname(&mbed_tls->ssl, (const char *)hostname))
     {
+        status = TLS_INTERNAL_ERR;
         goto exit;
     }
 
@@ -199,17 +197,20 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
     address = decode_str_data(&config->address, config->key);
     if (NULL == address)
     {
+        status = TLS_INVALID_ARGS;
         goto exit;
     }
 
     int result = snprintf(port, MAXIMUM_PORT_STR_LEN, "%u", config->port);
     if (0 > result || result >= MAXIMUM_PORT_STR_LEN)
     {
+        status = TLS_INVALID_ARGS;
         goto exit;
     }
 
     if (0 != mbedtls_net_connect(&mbed_tls->sock, (const char *)address, (const char *)port, MBEDTLS_NET_PROTO_TCP))
     {
+        status = TLS_CONNECT_ERR;
         goto exit;
     }
 
@@ -221,6 +222,7 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
 
     if (0 != mbedtls_ssl_handshake(&mbed_tls->ssl))
     {
+        status = TLS_HANDSHAKE_ERR;
         goto exit;
     }
 
@@ -258,8 +260,14 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, 
     poll_ctx_t *ctx = NULL;
     char port[MAXIMUM_PORT_STR_LEN] = {0};
 
-    if (NULL == conn || NULL == conn->ctx || NULL == config)
+    if (NULL == conn || NULL == conn->ctx || NULL == config || NULL == token)
     {
+        goto exit;
+    }
+
+    if (!token_acquire(token))
+    {
+        status = TLS_INVALID_ARGS;
         goto exit;
     }
 
@@ -269,18 +277,21 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, 
     address = decode_str_data(&config->address, config->key);
     if (NULL == address)
     {
+        status = TLS_INVALID_ARGS;
         goto exit;
     }
 
     int result = snprintf(port, MAXIMUM_PORT_STR_LEN, "%u", config->port);
     if (0 > result || result >= MAXIMUM_PORT_STR_LEN)
     {
+        status = TLS_INVALID_ARGS;
         goto exit;
     }
 
     /* attempt to bind on specified address and port */
     if (0 != mbedtls_net_bind(&mbed_tls->sock, (const char *)address, (const char *)port, MBEDTLS_NET_PROTO_TCP))
     {
+        status = TLS_BIND_ERR;
         goto exit;
     }
 
@@ -292,11 +303,13 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, 
     ctx = pollctx_create();
     if (NULL == ctx)
     {
+        status = TLS_INTERNAL_ERR;
         goto exit;
     }
 
     if (EVT_POLL_SUCCESS != pollctx_register(ctx, mbed_tls->sock.fd, EPOLLIN, handle_inbound_clients, &listener_ctx))
     {
+        status = TLS_INTERNAL_ERR;
         goto exit;
     }
 
@@ -304,6 +317,7 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, 
     {
         if (EPOLL_GENERIC_ERR == pollctx_dispatch(ctx, SOCKET_TIMEOUT))
         {
+            status = TLS_INTERNAL_ERR;
             goto exit;
         }
     }
@@ -319,7 +333,47 @@ exit:
         free(address);
     }
 
+    token_release(token);
+
     return status;
+}
+
+/*
+ * helper functions for destroying underlying mbedtls contexts
+ * these will be assigned within the vtable for the public `tls_destroy`
+ * these functions allow clients to only call `tls_destroy` and still remain `unaware` of underlying proto
+ */
+static void destroy_client_session(void *ctx)
+{
+    if (NULL == ctx)
+    {
+        return;
+    }
+
+    mbedtls_session_t *session = (mbedtls_session_t *)ctx;
+
+    mbedtls_ssl_free(&session->ssl);
+    mbedtls_net_free(&session->sock);
+
+    return;
+}
+
+static void destroy_tls_conn(void *ctx)
+{
+    if (NULL == ctx)
+    {
+        return;
+    }
+
+    mbedtls_conn_t *mbed_tls = (mbedtls_conn_t *)ctx;
+
+    mbedtls_ssl_free(&mbed_tls->ssl);
+    mbedtls_ssl_config_free(&mbed_tls->conf);
+    mbedtls_net_free(&mbed_tls->sock);
+    mbedtls_x509_crt_free(&mbed_tls->client_cert);
+    mbedtls_pk_free(&mbed_tls->client_key);
+
+    return;
 }
 
 /*
@@ -485,9 +539,9 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
 
     tls_conn->ctx = client;
     tls_conn->fd = client->sock.fd;
+    tls_conn->destroy = destroy_client_session;
     // tls_conn->recv = tls_recv();
     // tls_conn->send = tls_send();
-    // tls_conn->destroy = tls_destroy_client();
 
     session->conn = tls_conn;
     session->token = listener_cxt->token;
@@ -529,10 +583,5 @@ exit:
     return;
 }
 
-// todo: ensure we are requesting the token within listener so that we are seen as holding a reference
-// todo: add required errors and implement throughout code, ie connection failure, etc.
 // todo: within handle inbound clients callback, handle errors as well, token will need cancelled on critical errors
-
-// todo: create custom destroy functions for the session cleanup and tls_new init structure. sessions are slightly smaller -- link in vtable
-
 // todo: once all is done, ensure tests with valgrind are performed along with clang-tidy
