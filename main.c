@@ -65,6 +65,7 @@ int main()
                 printf("failed to connect\n");
                 return 1;
             }
+
             printf("connected to server\n");
             sleep(10);
         }
@@ -78,6 +79,11 @@ int main()
         break;
     }
 
+    if (token)
+    {
+        token_destroy(&token);
+    }
+
     if (cxt)
     {
         tls_destroy(&cxt);
@@ -89,3 +95,4 @@ int main()
 // main.c is purely debug really, will reorg once mtls has been built
 // todo: create root build.sh that will eventually wrap the build_deps.sh and perform all in one go
 // todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc. mbedtls/include/mbedtls/mbedtls_config.h
+// tls_destroy should be last call

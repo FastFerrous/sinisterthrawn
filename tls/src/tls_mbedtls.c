@@ -83,8 +83,9 @@ tls_conn_t *tls_new(stamped_config_t *config)
         goto exit;
     }
 
-    /* store underlying mbedtls instance */
+    /* store and initialize underlying mbedtls instance */
     tls_conn->ctx = mbed_tls;
+    tls_conn->destroy = destroy_tls_conn;
 
     mbedtls_ssl_init(&mbed_tls->ssl);
     mbedtls_ssl_config_init(&mbed_tls->conf);
@@ -130,10 +131,9 @@ tls_conn_t *tls_new(stamped_config_t *config)
         goto exit;
     }
 
-    /* assign callback functions */
+    /* assign callback functions for tls operations */
     tls_conn->connect = tls_connect;
     tls_conn->listen = tls_listen;
-    tls_conn->destroy = destroy_tls_conn;
 
     status = true;
 
@@ -153,11 +153,21 @@ void tls_destroy(tls_conn_t **tls_conn)
         return;
     }
 
-    if ((*tls_conn)->destroy && ((*tls_conn)->ctx))
+    if ((*tls_conn)->ctx)
     {
-        ((*tls_conn)->destroy((*tls_conn)->ctx));
+        if ((*tls_conn)->destroy)
+        {
+            ((*tls_conn)->destroy((*tls_conn)->ctx));
+        }
+
         free((*tls_conn)->ctx);
     }
+
+    /*
+     * this will completely tear down all mbedtls application data, should only be called once all clients have been shutdown, if applicable
+     * tls_destroy() should ideally be the last cleanup to occur within main programs execution to ensure all clients have been torn down gracefully
+     */
+    mbedtls_psa_crypto_free();
 
     free(*tls_conn);
     *tls_conn = NULL;
@@ -214,27 +224,55 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
         goto exit;
     }
 
-    conn->fd = mbed_tls->sock.fd;
+    /* set send/recv timeouts for socket operations */
+    struct timeval tv = {
+        .tv_sec = SOCKET_TIMEOUT,
+        .tv_usec = 0};
+
+    if (-1 == setsockopt(mbed_tls->sock.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(struct timeval)))
+    {
+        status = TLS_INTERNAL_ERR;
+        goto exit;
+    }
+
+    if (-1 == setsockopt(mbed_tls->sock.fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(struct timeval)))
+    {
+        status = TLS_INTERNAL_ERR;
+        goto exit;
+    }
 
     /* setup callbacks for internal mbedtls write and read operations */
     mbedtls_ssl_set_bio(&mbed_tls->ssl, &mbed_tls->sock,
                         mbedtls_net_send, mbedtls_net_recv, NULL);
 
-    if (0 != mbedtls_ssl_handshake(&mbed_tls->ssl))
+    int ret = 0;
+    time_t start_time = time(NULL);
+    while (0 != (ret = mbedtls_ssl_handshake(&mbed_tls->ssl)))
     {
-        status = TLS_HANDSHAKE_ERR;
-        goto exit;
+        if (!(MBEDTLS_ERR_SSL_WANT_READ == ret || MBEDTLS_ERR_SSL_WANT_WRITE == ret))
+        {
+            status = TLS_HANDSHAKE_ERR;
+            goto exit;
+        }
+
+        if (SOCKET_TIMEOUT <= difftime(time(NULL), start_time))
+        {
+            status = TLS_HANDSHAKE_ERR;
+            goto exit;
+        }
     }
 
     /*
      * currently no post handshake validation of flags as self signed certs will still be flagged for non trusted.
      * once legitimate certs are added, this could be readded; however, the callback is fully functional without this validation as is
      */
-
     // if (0 != mbedtls_ssl_get_verify_result(&mbed_tls->ssl))
     // {
     //     goto exit;
     // }
+
+    /* expose underlying socket */
+    conn->fd = mbed_tls->sock.fd;
 
     status = TLS_SUCCESS;
 
@@ -254,6 +292,7 @@ exit:
 
 static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, CancellationToken *token)
 {
+    bool is_acquired = false;
     tls_conn_status_t status = TLS_INVALID_PTR;
     mbedtls_conn_t *mbed_tls = NULL;
     char *address = NULL;
@@ -270,6 +309,8 @@ static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, 
         status = TLS_INVALID_ARGS;
         goto exit;
     }
+
+    is_acquired = true;
 
     /* cast opaque pointer to underlying mbedtls structure for setup and configuration */
     mbed_tls = (mbedtls_conn_t *)conn->ctx;
@@ -333,7 +374,10 @@ exit:
         free(address);
     }
 
-    token_release(token);
+    if (is_acquired)
+    {
+        token_release(token);
+    }
 
     return status;
 }
@@ -453,9 +497,11 @@ exit:
 static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
 {
     bool status = false;
+    bool is_critical = false;
     mbedtls_session_t *client = NULL;
     tls_conn_t *tls_conn = NULL;
     session_ctx_t *session = NULL;
+    mbedtls_listener_ctx_t *listener_cxt = NULL;
 
     if (INVALID_EVENTFD_DESCRIPTOR == fd || NULL == ctx)
     {
@@ -468,12 +514,13 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
     }
 
     /* casting back so that we are able to access the listener socket as well as the cancellation token as new clients will be provided that for synchronization */
-    mbedtls_listener_ctx_t *listener_cxt = (mbedtls_listener_ctx_t *)ctx;
+    listener_cxt = (mbedtls_listener_ctx_t *)ctx;
 
     /* allocate client mbedtls structure that will be stored within the generic tls_conn_t for each session */
     client = calloc(1, sizeof(mbedtls_session_t));
     if (NULL == client)
     {
+        is_critical = true;
         goto exit;
     }
 
@@ -526,14 +573,10 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
 
     /* create session structure for client sessions and spawn child thread  */
     tls_conn = calloc(1, sizeof(tls_conn_t));
-    if (NULL == tls_conn)
-    {
-        goto exit;
-    }
-
     session = calloc(1, sizeof(session_ctx_t));
-    if (NULL == session)
+    if (NULL == tls_conn || NULL == session)
     {
+        is_critical = true;
         goto exit;
     }
 
@@ -549,6 +592,7 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
     pthread_t tid = 0;
     if (0 != pthread_create(&tid, NULL, client_session_repl, (void *)session))
     {
+        is_critical = true;
         goto exit;
     }
 
@@ -580,8 +624,12 @@ exit:
         free(session);
     }
 
+    if (is_critical && listener_cxt)
+    {
+        token_shutdown(listener_cxt->token);
+    }
+
     return;
 }
 
-// todo: within handle inbound clients callback, handle errors as well, token will need cancelled on critical errors
 // todo: once all is done, ensure tests with valgrind are performed along with clang-tidy
