@@ -632,4 +632,18 @@ exit:
     return;
 }
 
+/*
+valgrind \
+    --leak-check=full \
+    --show-leak-kinds=all \
+    --track-origins=yes \
+    --track-fds=yes \
+    --error-exitcode=1 \
+    ./sith
+
+client:  currently has no leaks or any issues for valgrind output
+listener:
+
+*/
+
 // todo: once all is done, ensure tests with valgrind are performed along with clang-tidy
