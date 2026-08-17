@@ -2,6 +2,8 @@
 #include "sessions.h"
 #include "evt_poll.h"
 
+#include <stdio.h> // debug
+
 /* static declarations */
 static void token_shutdown_cb(int fd, uint32_t events, void *user_data);
 static void handle_client_request(int fd, uint32_t events, void *user_data);
@@ -79,6 +81,20 @@ static void token_shutdown_cb(int fd, uint32_t events, void *user_data)
 
 static void handle_client_request(int fd, uint32_t events, void *user_data)
 {
+    session_ctx_t *cxt = NULL;
+    if (NULL == user_data || INVALID_SOCKFD == fd)
+    {
+        goto exit;
+    }
+
+    cxt = (session_ctx_t *)user_data;
+
+    // debug
+    unsigned buffer[4096] = {0};
+    cxt->conn->recv(cxt->conn, buffer, sizeof(buffer));
+    // end debug
+
+exit:
     return;
 }
 

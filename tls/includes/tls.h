@@ -8,7 +8,7 @@
 #define INVALID_SOCKFD -1
 #define GENERIC_TLS_FAILURE -1
 #define MAXIMUM_PORT_STR_LEN 6
-#define SOCKET_TIMEOUT 3000 /* 3 seconds */
+#define SOCKET_TIMEOUT 5000
 
 typedef enum tls_conn_status_t
 {
@@ -39,8 +39,8 @@ typedef struct tls_conn_t
     /* tls library vtable */
     tls_conn_status_t (*connect)(struct tls_conn_t *conn, stamped_config_t *config);
     tls_conn_status_t (*listen)(struct tls_conn_t *conn, stamped_config_t *config, CancellationToken *token);
-    int (*send)(struct tls_conn_t *conn, const unsigned char *buf, size_t len);
-    int (*recv)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
+    tls_conn_status_t (*send)(struct tls_conn_t *conn, const unsigned char *buf, size_t len);
+    tls_conn_status_t (*recv)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
     void (*destroy)(void *ctx);
 } tls_conn_t;
 

@@ -92,8 +92,6 @@ class Session:
         # await self.reader.read(size)
         # end debug
 
-        pass
-
     async def get_netstat(self, args: list):
         pass
 

@@ -105,6 +105,7 @@ tls_conn_t *tls_new(stamped_config_t *config)
 
     mbedtls_ssl_conf_authmode(&mbed_tls->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_verify(&mbed_tls->conf, mtls_spki_verification, (void *)&config->spki);
+    mbedtls_ssl_conf_read_timeout(&mbed_tls->conf, SOCKET_TIMEOUT);
 
     /* load public and private keys for use during handshake and register within mbedtls */
     if (0 != mbedtls_x509_crt_parse_der(&mbed_tls->client_cert,
@@ -237,19 +238,12 @@ static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config)
 
     /* setup callbacks for internal mbedtls write and read operations */
     mbedtls_ssl_set_bio(&mbed_tls->ssl, &mbed_tls->sock,
-                        mbedtls_net_send, mbedtls_net_recv, NULL);
+                        mbedtls_net_send, NULL, mbedtls_net_recv_timeout);
 
     int ret = 0;
-    time_t start_time = time(NULL);
     while (0 != (ret = mbedtls_ssl_handshake(&mbed_tls->ssl)))
     {
         if (!(MBEDTLS_ERR_SSL_WANT_READ == ret || MBEDTLS_ERR_SSL_WANT_WRITE == ret))
-        {
-            status = TLS_HANDSHAKE_ERR;
-            goto exit;
-        }
-
-        if (SOCKET_TIMEOUT <= difftime(time(NULL), start_time))
         {
             status = TLS_HANDSHAKE_ERR;
             goto exit;
@@ -375,6 +369,8 @@ exit:
 
     return status;
 }
+
+static tls_conn_status_t tls_recv(tls_conn_t *conn);
 
 /*
  * helper functions for destroying underlying mbedtls contexts
@@ -538,7 +534,7 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
         goto exit;
     }
 
-    mbedtls_ssl_set_bio(&client->ssl, &client->sock, mbedtls_net_send, mbedtls_net_recv, NULL);
+    mbedtls_ssl_set_bio(&client->ssl, &client->sock, mbedtls_net_send, NULL, mbedtls_net_recv_timeout);
 
     /* set send/recv timeouts for client socket operations */
     struct timeval tv = {
@@ -557,15 +553,9 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
 
     /* attempt to perform ssl handshake */
     int ret = 0;
-    time_t start_time = time(NULL);
     while (0 != (ret = mbedtls_ssl_handshake(&client->ssl)))
     {
         if (!(MBEDTLS_ERR_SSL_WANT_READ == ret || MBEDTLS_ERR_SSL_WANT_WRITE == ret))
-        {
-            goto exit;
-        }
-
-        if (SOCKET_TIMEOUT <= difftime(time(NULL), start_time))
         {
             goto exit;
         }
@@ -640,10 +630,8 @@ valgrind \
     --track-fds=yes \
     --error-exitcode=1 \
     ./sith
-
-client:  currently has no leaks or any issues for valgrind output
-listener:
-
 */
 
-// todo: once all is done, ensure tests with valgrind are performed along with clang-tidy
+// add send and recv -- use fat pointers via max packet size and capacity, etc.
+
+// todo: impl the configuration options such as sleep, timers, callback interval, etc. need to add all that.
