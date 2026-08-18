@@ -9,6 +9,7 @@
 #define GENERIC_TLS_FAILURE -1
 #define MAXIMUM_PORT_STR_LEN 6
 #define SOCKET_TIMEOUT 5000
+#define MAXIMUM_PACKET_LEN 16384
 
 typedef enum tls_conn_status_t
 {

@@ -1,6 +1,7 @@
 #ifndef SESSIONS_H
 #define SESSIONS_H
 
+#include <stdbool.h>
 #include "tls.h"
 #include "token.h"
 
@@ -11,6 +12,7 @@
  */
 typedef struct session_ctx_t
 {
+    bool is_closed;
     tls_conn_t *conn;
     CancellationToken *token;
 } session_ctx_t;

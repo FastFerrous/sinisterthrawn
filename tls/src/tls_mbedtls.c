@@ -45,6 +45,7 @@ typedef struct mbedtls_listener_ctx_t
 /* declarations */
 static tls_conn_status_t tls_connect(tls_conn_t *conn, stamped_config_t *config);
 static tls_conn_status_t tls_listen(tls_conn_t *conn, stamped_config_t *config, CancellationToken *token);
+static tls_conn_status_t tls_recv(tls_conn_t *conn, unsigned char *buffer, size_t len);
 static int mtls_spki_verification(void *cb_cxt, mbedtls_x509_crt *cert, int depth, uint32_t *flags);
 static char *decode_str_data(Slice *slice, uint8_t key);
 static void handle_inbound_clients(int fd, uint32_t events, void *ctx);
@@ -135,6 +136,7 @@ tls_conn_t *tls_new(stamped_config_t *config)
     /* assign callback functions for tls operations */
     tls_conn->connect = tls_connect;
     tls_conn->listen = tls_listen;
+    tls_conn->recv = tls_recv;
 
     status = true;
 
@@ -370,7 +372,32 @@ exit:
     return status;
 }
 
-static tls_conn_status_t tls_recv(tls_conn_t *conn);
+static tls_conn_status_t tls_recv(tls_conn_t *conn, unsigned char *buffer, size_t len)
+{
+    tls_conn_status_t status = TLS_INVALID_PTR;
+
+    if (NULL == conn || NULL == conn->ctx || NULL == buffer || 0 == len)
+    {
+        goto exit;
+    }
+
+    size_t bytes_read = 0;
+    while (bytes_read < len)
+    {
+        int ret = mbedtls_ssl_read((mbedtls_ssl_context *)conn->ctx, buffer + bytes_read, len - bytes_read);
+        if (0 >= ret)
+        {
+            status = TLS_READ_ERR;
+            goto exit;
+        }
+
+        bytes_read += ret;
+    }
+
+    status = TLS_SUCCESS;
+exit:
+    return status;
+}
 
 /*
  * helper functions for destroying underlying mbedtls contexts
@@ -573,9 +600,10 @@ static void handle_inbound_clients(int fd, uint32_t events, void *ctx)
     tls_conn->ctx = client;
     tls_conn->fd = client->sock.fd;
     tls_conn->destroy = destroy_client_session;
-    // tls_conn->recv = tls_recv();
+    tls_conn->recv = tls_recv;
     // tls_conn->send = tls_send();
 
+    session->is_closed = false;
     session->conn = tls_conn;
     session->token = listener_cxt->token;
 
@@ -632,6 +660,5 @@ valgrind \
     ./sith
 */
 
-// add send and recv -- use fat pointers via max packet size and capacity, etc.
-
+// add send  -- use fat pointers via max packet size and capacity, etc.
 // todo: impl the configuration options such as sleep, timers, callback interval, etc. need to add all that.

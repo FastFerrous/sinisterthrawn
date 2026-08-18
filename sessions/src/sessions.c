@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "sessions.h"
 #include "evt_poll.h"
+#include "box.h"
 
 #include <stdio.h> // debug
 
@@ -44,7 +45,7 @@ void *client_session_repl(void *ctx)
         goto exit;
     }
 
-    while (!token_is_cancelled(session->token))
+    while (!token_is_cancelled(session->token) && !session->is_closed)
     {
         if (EPOLL_GENERIC_ERR == pollctx_dispatch(poll, EPOLL_INDEFINITE))
         {
@@ -81,21 +82,45 @@ static void token_shutdown_cb(int fd, uint32_t events, void *user_data)
 
 static void handle_client_request(int fd, uint32_t events, void *user_data)
 {
+    bool is_critical = false; /* boolean is set when a critical application occurs and the token will need to be set to gracefully tear down */
+    box_t *pkt = NULL;
     session_ctx_t *cxt = NULL;
+
     if (NULL == user_data || INVALID_SOCKFD == fd)
     {
         goto exit;
     }
 
+    /* cast user data back into the client session context */
     cxt = (session_ctx_t *)user_data;
 
-    // debug
-    unsigned buffer[4096] = {0};
-    cxt->conn->recv(cxt->conn, buffer, sizeof(buffer));
-    // end debug
+    /* todo: allocate a single box to store read in data from remote peer ( this is just debug , will do header + packet )*/
+    pkt = box_new(1, MAXIMUM_PACKET_LEN);
+    if (NULL == pkt)
+    {
+        is_critical = true;
+        goto exit;
+    }
+
+    if (TLS_SUCCESS != cxt->conn->recv(cxt->conn, box_data((const box_t *)pkt), box_size((const box_t *)pkt)))
+    {
+        cxt->is_closed = true;
+        goto exit;
+    }
 
 exit:
+    if (pkt)
+    {
+        box_free(&pkt);
+    }
+
+    if (is_critical)
+    {
+        token_shutdown(cxt->token);
+    }
+
     return;
 }
 
+// modify box to include capacity + len, or just track sep
 // currently just a quick skeleton, will finish teh comms profile stuff before going any further on client repl
