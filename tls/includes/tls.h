@@ -52,3 +52,9 @@ tls_conn_t *tls_new(stamped_config_t *config);
 void tls_destroy(tls_conn_t **tls_conn);
 
 #endif
+
+// each protocol needs to handle packet flow ie hdr + data + padding. when a request comes in to send + recv, comms will handle the padding, etc. application needs a limit to data size and then a % is added as padding from comms. Comms will add/strip and application is none the wiser. only legit data is returned to application
+// for above: hdr will be defined here so comms can share it
+
+// for the shared header, etc. we will be doing padding to ensure that we have wire variation. max packet is the above define. max data len is 8192. so the other half is reserved for padding. add that as well. application is responsible for ensuring that data does not exceed the 8192 amount. or, we just send the data to the comms and comms can manage that
+// most likely will have a proto.h and proto.c thats used by the tls libraries for a shared common state with packets, etc. -- should only need to write once and then can be called by the correlating tls library, ie get padding, strip padding, etc.

@@ -142,7 +142,9 @@ class Tls:
             return None
 
         if spki_hash != expected_spki:
-            self.log.info("Remote endpoint does not match expected SPKI hash, terminating connection")
+            self.log.info(
+                "Remote endpoint does not match expected SPKI hash, terminating connection"
+            )
             await self._close_writer(writer)
             return None
 

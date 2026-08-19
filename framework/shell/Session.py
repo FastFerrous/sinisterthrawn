@@ -2,16 +2,11 @@ import asyncio
 import shlex
 import logging
 from uuid import uuid4
-from enum import IntEnum
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.patch_stdout import patch_stdout
-
-
-class ShellErrors(IntEnum):
-    SUCCESS = (0,)
-    INVALID_ARGS = (1,)
+from shell.commands.netstat import Netstat
 
 
 class Session:
@@ -77,7 +72,7 @@ class Session:
 
                 await self.commands[split_cmd[0]](split_cmd[1:])
 
-    async def get_process_list(self, args: list):
+    async def get_process_list(self, _):
         # debug
         if self.writer.is_closing():
             print("closing")
@@ -94,8 +89,13 @@ class Session:
 
         # end debug
 
-    async def get_netstat(self, args: list):
-        pass
+    async def get_netstat(self, _):
+        """Performs `ss -tunap` equivalent on remote host. `inet_diag, tcp_diag, udp_diag` kernel modules be loaded depending on kernel and configuration on remote host"""
+
+        ns = Netstat()
+        request = ns.pack_request()
+        print(request)
+        print(len(request))
 
     async def get_listing(self, args: list):
         pass
