@@ -2,6 +2,7 @@
 #include "tls.h"
 #include "patch.h"
 #include "token.h"
+#include "sessions.h"
 
 /* debug */
 #include <unistd.h>
@@ -67,7 +68,9 @@ int main()
             }
 
             printf("connected to server\n");
-            sleep(10);
+
+            session_ctx_t session = {.conn = cxt, .is_closed = false, .token = token};
+            client_session_repl(&session);
         }
         break;
 
@@ -92,7 +95,6 @@ int main()
     return 0;
 }
 
-// main.c is purely debug really, will reorg once mtls has been built
+// main.c is purely debug really, no real thought, just dirty code. eventually can do the sleeps, jitter etc that is specified in the config
 // todo: create root build.sh that will eventually wrap the build_deps.sh and perform all in one go
 // todo: work on mbedtls custom config, mbedtls/mbedtls_config.h, to reduce algos, etc. mbedtls/include/mbedtls/mbedtls_config.h
-// tls_destroy should be last call

@@ -89,7 +89,9 @@ class Session:
         except ConnectionResetError:
             print("connection has been reset")
 
-        # await self.reader.read(size)
+        result = await self.reader.read(len(b"apples"))
+        print(result.decode())
+
         # end debug
 
     async def get_netstat(self, args: list):

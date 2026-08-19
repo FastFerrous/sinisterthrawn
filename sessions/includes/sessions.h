@@ -12,8 +12,12 @@
  */
 typedef struct session_ctx_t
 {
-    bool is_closed;
     tls_conn_t *conn;
+
+    /* local session status -- non critical errors, ie remote peer disconnection, will set this to gracefully terminate the client session and thread */
+    bool is_closed;
+
+    /* application status -- critical error occurred, setting this will begin program termination */
     CancellationToken *token;
 } session_ctx_t;
 

@@ -7,7 +7,7 @@
 
 /* static declarations */
 static void token_shutdown_cb(int fd, uint32_t events, void *user_data);
-static void handle_client_request(int fd, uint32_t events, void *user_data);
+static void handle_client_request_cb(int fd, uint32_t events, void *user_data);
 
 void *client_session_repl(void *ctx)
 {
@@ -35,7 +35,7 @@ void *client_session_repl(void *ctx)
         goto exit;
     }
 
-    if (EVT_POLL_SUCCESS != pollctx_register(poll, session->conn->fd, EPOLLIN, handle_client_request, session))
+    if (EVT_POLL_SUCCESS != pollctx_register(poll, session->conn->fd, EPOLLIN, handle_client_request_cb, session))
     {
         goto exit;
     }
@@ -80,7 +80,7 @@ static void token_shutdown_cb(int fd, uint32_t events, void *user_data)
     return;
 }
 
-static void handle_client_request(int fd, uint32_t events, void *user_data)
+static void handle_client_request_cb(int fd, uint32_t events, void *user_data)
 {
     bool is_critical = false; /* boolean is set when a critical application occurs and the token will need to be set to gracefully tear down */
     box_t *pkt = NULL;
@@ -108,6 +108,12 @@ static void handle_client_request(int fd, uint32_t events, void *user_data)
         goto exit;
     }
 
+    if (TLS_SUCCESS != cxt->conn->send(cxt->conn, box_data((const box_t *)pkt), box_size((const box_t *)pkt)))
+    {
+        cxt->is_closed = true;
+        goto exit;
+    }
+
 exit:
     if (pkt)
     {
@@ -122,5 +128,4 @@ exit:
     return;
 }
 
-// modify box to include capacity + len, or just track sep
-// currently just a quick skeleton, will finish teh comms profile stuff before going any further on client repl
+// todo: need to eventually move the poll cxt into the session cxt so that clients can properly handle tunnel request, ie add tunnel and then register to epoll with tunnel_cb

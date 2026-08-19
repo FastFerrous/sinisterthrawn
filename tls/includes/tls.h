@@ -40,7 +40,7 @@ typedef struct tls_conn_t
     /* tls library vtable */
     tls_conn_status_t (*connect)(struct tls_conn_t *conn, stamped_config_t *config);
     tls_conn_status_t (*listen)(struct tls_conn_t *conn, stamped_config_t *config, CancellationToken *token);
-    tls_conn_status_t (*send)(struct tls_conn_t *conn, const unsigned char *buf, size_t len);
+    tls_conn_status_t (*send)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
     tls_conn_status_t (*recv)(struct tls_conn_t *conn, unsigned char *buf, size_t len);
     void (*destroy)(void *ctx);
 } tls_conn_t;
