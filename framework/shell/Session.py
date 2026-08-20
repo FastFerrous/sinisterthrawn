@@ -73,29 +73,29 @@ class Session:
                 await self.commands[split_cmd[0]](split_cmd[1:])
 
     async def get_process_list(self, _):
-        # debug
-        if self.writer.is_closing():
-            print("closing")
-
-        self.writer.write(b"apples")
-
-        try:
-            await self.writer.drain()
-        except ConnectionResetError:
-            print("connection has been reset")
-
-        result = await self.reader.read(len(b"apples"))
-        print(result.decode())
-
-        # end debug
+        pass 
 
     async def get_netstat(self, _):
         """Performs `ss -tunap` equivalent on remote host. `inet_diag, tcp_diag, udp_diag` kernel modules be loaded depending on kernel and configuration on remote host"""
 
+        if self.writer.is_closing():
+            return None 
+
         ns = Netstat()
+
         request = ns.pack_request()
-        print(request)
-        print(len(request))
+        if request is None: 
+            self.log.info("Unable to generate netstat request")
+            return 
+
+        self.writer.write(request)
+
+        try:
+            await self.writer.drain()
+        except ConnectionResetError:
+            return None 
+
+        response = await self.reader.read() # header size , most likely wrap this into a wrapper function so we can ensure we get all bytes. can be stored in tls
 
     async def get_listing(self, args: list):
         pass
@@ -106,3 +106,8 @@ class Session:
 
     async def exit(self, _):
         pass
+
+
+# need a way of returning critical errors back to the framework, ie if a session has encountered a critical problem that needs to be shutdown, etc. 
+    # most likely just bubble up a status error back so that run returns with a status that can be tracked
+    # await that is called within run needs to return some form of shell status, etc. that canbe bubbled up, will add once done with a bit more framework managment

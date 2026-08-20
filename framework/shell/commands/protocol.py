@@ -29,10 +29,10 @@ class PacketHeader():
 PACKET_HEADER_FMT : str = "!IBHH"
 
 def get_padding(packet_length: int) -> Optional[bytearray]: 
-    '''Calculates a random percentage between 5-20% of the remaining packet length and returns a random bytearray of that length'''
+    '''Calculates a random percentage between 5-15% of the remaining packet length and returns a random bytearray of that length'''
 
     # Percentage limitations for generating padding
-    MAXIMUM_PERCENTAGE: int = 20
+    MAXIMUM_PERCENTAGE: int = 15
     MINIMUM_PERCENTAGE: int = 5 
 
     # determine remaining byte length within total packet, padding cannot exceed 8192 bytes even if remaining is larger than that

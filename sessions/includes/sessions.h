@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "tls.h"
 #include "token.h"
+#include "evt_poll.h"
 
 /*
  * stores comms profile + cancellation token for synchronization purposes
@@ -19,6 +20,9 @@ typedef struct session_ctx_t
 
     /* application status -- critical error occurred, setting this will begin program termination */
     CancellationToken *token;
+
+    /* event poll for each session, stored within session ctx to permit sessions to dynamically grow as required, ie tunneling */
+    poll_ctx_t *poll;
 } session_ctx_t;
 
 /* single entry point for handling all client sessions, regardless of being instantiated via CALLBACK or SERVER mode */

@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include "sessions.h"
-#include "evt_poll.h"
 #include "box.h"
 
 #include <stdio.h> // debug
@@ -12,7 +11,6 @@ static void handle_client_request_cb(int fd, uint32_t events, void *user_data);
 void *client_session_repl(void *ctx)
 {
     session_ctx_t *session = NULL;
-    poll_ctx_t *poll = NULL;
 
     if (NULL == ctx)
     {
@@ -29,34 +27,34 @@ void *client_session_repl(void *ctx)
     }
 
     /* register poll and correlating eventfd + socket for callback handling */
-    poll = pollctx_create();
-    if (NULL == poll)
+    session->poll = pollctx_create();
+    if (NULL == session->poll)
     {
         goto exit;
     }
 
-    if (EVT_POLL_SUCCESS != pollctx_register(poll, session->conn->fd, EPOLLIN, handle_client_request_cb, session))
+    if (EVT_POLL_SUCCESS != pollctx_register(session->poll, session->conn->fd, EPOLLIN, handle_client_request_cb, session))
     {
         goto exit;
     }
 
-    if (EVT_POLL_SUCCESS != pollctx_register(poll, token_get_event(session->token), EPOLLIN, token_shutdown_cb, NULL))
+    if (EVT_POLL_SUCCESS != pollctx_register(session->poll, token_get_event(session->token), EPOLLIN, token_shutdown_cb, NULL))
     {
         goto exit;
     }
 
     while (!token_is_cancelled(session->token) && !session->is_closed)
     {
-        if (EPOLL_GENERIC_ERR == pollctx_dispatch(poll, EPOLL_INDEFINITE))
+        if (EPOLL_GENERIC_ERR == pollctx_dispatch(session->poll, EPOLL_INDEFINITE))
         {
             break;
         }
     }
 
 exit:
-    if (poll)
+    if (session->poll)
     {
-        pollctx_destroy(&poll);
+        pollctx_destroy(&session->poll);
     }
 
     if (session)
@@ -128,4 +126,8 @@ exit:
     return;
 }
 
-// todo: need to eventually move the poll cxt into the session cxt so that clients can properly handle tunnel request, ie add tunnel and then register to epoll with tunnel_cb
+// currently handle client cb is just reading arb max pack, need to make proto.c so that we can actually follow the structure required, to include padding.
+
+// within session cxt, create a cb fn and cb cleanup fn that can support long runnign tasks. ie upload download, poll in triggers, chunks are sent and then client will handle the chunks. once chunk counter has been hit, cleanup fn is called, etc.
+// witin proto, create a chunk struct, so that we can access total chunks, etc.
+// uses chunk structure to determine what gets performed, . ie upload will have a upload ctx that gets allocated and stored within session. it will open the fd, keep it open, and then when chunks are done, use the callback, or just sync call the  close, etc.
