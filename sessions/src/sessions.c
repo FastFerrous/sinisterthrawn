@@ -126,8 +126,5 @@ exit:
     return;
 }
 
-// currently handle client cb is just reading arb max pack, need to make proto.c so that we can actually follow the structure required, to include padding.
-
-// within session cxt, create a cb fn and cb cleanup fn that can support long runnign tasks. ie upload download, poll in triggers, chunks are sent and then client will handle the chunks. once chunk counter has been hit, cleanup fn is called, etc.
-// witin proto, create a chunk struct, so that we can access total chunks, etc.
-// uses chunk structure to determine what gets performed, . ie upload will have a upload ctx that gets allocated and stored within session. it will open the fd, keep it open, and then when chunks are done, use the callback, or just sync call the  close, etc.
+// todo: currently handle client cb is just reading arb max pack, need to make proto.c so that we can actually follow the structure required, to include padding.
+// todo: session cxt also needs an opaque pointer so that sessions can track long running tasks, ie upload or download. upload may allocate a struture that permits keeping track of fd, index, etc.

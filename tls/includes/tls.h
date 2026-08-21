@@ -26,6 +26,7 @@ typedef enum tls_conn_status_t
     TLS_BIND_ERR,
     TLS_READ_ERR,
     TLS_WRITE_ERR,
+    TLS_INVALID_PACKET,
     TLS_INTERNAL_ERR,
 } tls_conn_status_t;
 

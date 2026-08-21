@@ -51,4 +51,5 @@ def get_padding(packet_length: int) -> Optional[bytearray]:
         return None
 
 
+# need to update according to c. protocol chunking, etc. 
 
