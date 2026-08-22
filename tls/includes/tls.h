@@ -21,6 +21,7 @@ typedef enum tls_conn_status_t
     TLS_SUCCESS,
     TLS_INVALID_PTR,
     TLS_INVALID_ARGS,
+    TLS_ALLOC_ERR,
     TLS_HANDSHAKE_ERR,
     TLS_CONNECT_ERR,
     TLS_BIND_ERR,
