@@ -5,6 +5,10 @@
 #include "endianness.h"
 #include "struct.h"
 
+/* Used to create the percentage range of 5-15% for padding length calculation */
+#define MINIMUM_PADDING_PERCENTAGE 5
+#define PADDING_PERCENTAGE_MODULUS 11
+
 /* validates inbound packets header and returns true on success or false on
  * error */
 static bool validate_header(packet_header_t *hdr)
@@ -16,42 +20,36 @@ static bool validate_header(packet_header_t *hdr)
         goto exit;
     }
 
+    /* to avoid the caller needing to supply two buffers for the same outcome, a temporary buffer will be made to perform unpack operations */
+    unsigned char buffer[sizeof(packet_header_t)] = {0};
+    memcpy(buffer, hdr, sizeof(packet_header_t));
+
+    if (STRUCT_OK != struct_unpack(
+                         "IHHBHH",
+                         buffer,
+                         sizeof(packet_header_t),
+                         &hdr->total_packet_len,
+                         &hdr->total_chunks,
+                         &hdr->current_chunk,
+                         &hdr->opcode,
+                         &hdr->data_len,
+                         &hdr->pad_len))
+    {
+        goto exit;
+    }
+
     /* validate total packet length and convert from network byte order */
-    uint32_t total_len = 0;
-    if (!u32_swap(hdr->total_packet_len, &total_len))
+    if (MAXIMUM_PACKET_LEN < hdr->total_packet_len)
     {
         goto exit;
     }
-
-    if (MAXIMUM_PACKET_LEN < total_len)
-    {
-        goto exit;
-    }
-
-    hdr->total_packet_len = total_len;
 
     /* validate that the current chunk does not exceed the total number of chunks,
      * ie malformed packet */
-    uint16_t current_chunk = 0;
-    uint16_t total_chunks = 0;
-
-    if (!u16_swap(hdr->current_chunk, &current_chunk))
+    if (hdr->current_chunk >= hdr->total_chunks)
     {
         goto exit;
     }
-
-    if (!u16_swap(hdr->total_chunks, &total_chunks))
-    {
-        goto exit;
-    }
-
-    if (current_chunk >= total_chunks)
-    {
-        goto exit;
-    }
-
-    hdr->current_chunk = current_chunk;
-    hdr->total_chunks = total_chunks;
 
     /* validate that opcode doesnt exceed the backstop */
     if (OPCODE_MAXIMUM <= hdr->opcode)
@@ -61,26 +59,10 @@ static bool validate_header(packet_header_t *hdr)
 
     /* validate that packet length matches expected values, data and padding
      * should not exceed 8192 bytes */
-    uint16_t data_len = 0;
-    uint16_t pad_len = 0;
-
-    if (!u16_swap(hdr->data_len, &data_len))
+    if (MAXIMUM_DATA_LEN < hdr->data_len || MAXIMUM_PAD_LEN < hdr->pad_len)
     {
         goto exit;
     }
-
-    if (!u16_swap(hdr->pad_len, &pad_len))
-    {
-        goto exit;
-    }
-
-    if (MAXIMUM_DATA_LEN < data_len || MAXIMUM_PAD_LEN < pad_len)
-    {
-        goto exit;
-    }
-
-    hdr->data_len = data_len;
-    hdr->pad_len = pad_len;
 
     /* validate that the header length matches sizeof(header) + data and pad
      * lengths, if not, malformed */
@@ -103,29 +85,48 @@ exit:
  * should be no issue with this; however, if problems start to occur, we could
  * manually open random/urandom and read the byte count manually
  */
-static unsigned char *get_padding(size_t data_len, uint16_t *pad_len)
+static unsigned char *get_padding(uint16_t *pad_len)
 {
     bool status = false;
     unsigned char *buffer = NULL;
 
-    if (0 == data_len)
+    if (NULL == pad_len)
     {
         goto exit;
     }
 
+    /*
+     * pad length will be 5-15% of the MAXIMUM_PAD_LEN value
+     * using a random byte from /dev/urandom to determine percentage of padding via modulus
+     * */
+    uint8_t rand_byte = 0;
+    if (0 > getrandom(&rand_byte, sizeof(uint8_t), GRND_NONBLOCK))
+    {
+        goto exit;
+    }
+
+    uint8_t percentage = MINIMUM_PADDING_PERCENTAGE + (rand_byte % PADDING_PERCENTAGE_MODULUS);
+    uint16_t length = (MAXIMUM_PAD_LEN * percentage) / 100;
+
+    /* if for some reason the length of the calculation is zero, set the minimum length to rand_byte. If that is zero, set to one */
+    if (0 == length)
+    {
+        length = 0 != rand_byte ? rand_byte : sizeof(unsigned char);
+    }
+
     /* allocate temporary buffer based on user supplied length to store random
      * bytes, if an error occurs free and null prior to return */
-    buffer = calloc(1, data_len);
+    buffer = calloc(1, length);
     if (NULL == buffer)
     {
         goto exit;
     }
 
     size_t bytes_read = 0;
-    while (bytes_read < data_len)
+    while (bytes_read < length)
     {
         ssize_t ret =
-            getrandom(buffer + bytes_read, data_len - bytes_read, GRND_NONBLOCK);
+            getrandom(buffer + bytes_read, length - bytes_read, GRND_NONBLOCK);
         if (ret < 0)
         {
             goto exit;
@@ -133,6 +134,9 @@ static unsigned char *get_padding(size_t data_len, uint16_t *pad_len)
 
         bytes_read += ret;
     }
+
+    /* set pad length for caller */
+    *pad_len = length;
 
     status = true;
 
@@ -146,6 +150,7 @@ exit:
     return buffer;
 }
 
+/* Uses supplied header, data, and padding and creates a serialized packet for writing over the socket */
 static unsigned char *build_packet(packet_header_t *hdr, unsigned char *data, unsigned char *padding)
 {
     bool status = false;
@@ -221,7 +226,7 @@ tls_conn_status_t proto_write(struct tls_conn_t *conn, opcodes_t opcode,
 
         /* get padding for packet variation */
         uint16_t pad_len = 0;
-        unsigned char *padding = NULL; // needs ot be a percent of the data len. so data len will get supplid and 5-15% of that will be calculated and returned
+        padding = get_padding(&pad_len);
         if (NULL == padding)
         {
             status = TLS_ALLOC_ERR;
@@ -338,6 +343,7 @@ exit:
     return status;
 }
 
+/* simple helper function exposed to application for freeing chunks */
 void chunk_free(chunk_t **chunk)
 {
     if (NULL == chunk || NULL == *chunk)
@@ -356,8 +362,3 @@ void chunk_free(chunk_t **chunk)
 exit:
     return;
 }
-
-// flow: app -> proto -> tls library
-
-// todo: get padding within proto_write.. padding should return the pointer + pointer length. so it takes in data size, calculates padding and returns both values
-// todo: use struct to unpack the response for proto_read -> validate_header

@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "sessions.h"
 #include "box.h"
+#include "proto.h"
 
 #include <stdio.h> // debug
 
@@ -126,5 +127,6 @@ exit:
     return;
 }
 
-// todo: currently handle client cb is just reading arb max pack, need to make proto.c so that we can actually follow the structure required, to include padding.
+// todo: use the new proto to call recv and validation, etc. that will use the library, etc.
 // todo: session cxt also needs an opaque pointer so that sessions can track long running tasks, ie upload or download. upload may allocate a struture that permits keeping track of fd, index, etc.
+// todo: remove box, may not need anymore

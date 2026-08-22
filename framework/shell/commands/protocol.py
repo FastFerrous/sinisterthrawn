@@ -1,3 +1,4 @@
+import struct
 from enum import IntEnum
 from dataclasses import dataclass
 from typing import Optional
@@ -11,45 +12,90 @@ MAXIMUM_PACKET_LEN : int = 16384
 MAXIMUM_DATA_LEN: int = 8192
 MAXIMUM_PADDING_LEN: int = 8192
 
+# Shared packet header structure 
+PACKET_HEADER_FMT: str = "!IHHBHH"
+
 class Opcodes(IntEnum):
     NETSTAT = 0
+    PS = 1
+    LS = 2
 
 class Retcodes(IntEnum):
     SUCCESS = 0
     INVALID_ARGS = 1
 
 @dataclass
-class PacketHeader():
+class PacketHeader:
     '''Shared packet header across all protocol requests'''
-    packet_len: int 
-    opcode: int 
-    data_len: int 
-    padding_len: int 
+    total_packet_len: int
+    total_chunks: int
+    current_chunk: int
+    opcode: int
+    data_len: int
+    pad_len: int
 
-PACKET_HEADER_FMT : str = "!IBHH"
+@dataclass
+class Chunk:
+    opcode: int
+    total_chunks: int
+    current_chunk: int
+    data: bytes
+    data_len: int
 
-def get_padding(packet_length: int) -> Optional[bytearray]: 
-    '''Calculates a random percentage between 5-15% of the remaining packet length and returns a random bytearray of that length'''
+def get_padding() -> Optional[bytearray]: 
+    """Calculates 5-15% of MAXIMUM_PADDING_LEN and returns padding on success or None on error"""
 
-    # Percentage limitations for generating padding
-    MAXIMUM_PERCENTAGE: int = 15
-    MINIMUM_PERCENTAGE: int = 5 
+    # Percentage limitations for generating random padding bytes
+    MINIMUM_PERCENTAGE: int = 5
+    PADDING_PERCENTAGE_RANGE: int = 11
 
-    # determine remaining byte length within total packet, padding cannot exceed 8192 bytes even if remaining is larger than that
-    remaining = MAXIMUM_PACKET_LEN - packet_length
-    if remaining <= 0:
-        return None 
+    # Calculate the percentage of padding and return that number of bytes 
+    percentage = MINIMUM_PERCENTAGE + randbelow(PADDING_PERCENTAGE_RANGE)
+    pad_len = (MAXIMUM_PADDING_LEN * percentage) // 100
 
-    # check whether the amount remaining is less than maximum padding length, and if not, set to the maximum allowed
-    cap = min(remaining, MAXIMUM_PADDING_LEN)
-    percentage = MINIMUM_PERCENTAGE + randbelow(MAXIMUM_PERCENTAGE  - MINIMUM_PERCENTAGE + 1)  
-    pad_len = max(1, (cap * percentage) // 100)
+    # If length is zero, set pad_len to random value within 1-255 
+    if pad_len == 0:
+        pad_len = 1 + randbelow(255)
 
     try:
         return urandom(pad_len)
     except OSError:
         return None
 
+def build_packet(hdr: PacketHeader, data: bytes, padding: bytes) -> Optional[bytes]:
+    """Packs header + data + padding into a single wire-ready buffer"""
 
-# need to update according to c. protocol chunking, etc. 
+    fmt : str = PACKET_HEADER_FMT + f"{len(data)}s" + f"{len(padding)}s"
+
+    try:
+        packet = struct.pack(
+            fmt,
+            hdr.total_packet_len,
+            hdr.total_chunks,
+            hdr.current_chunk,
+            hdr.opcode,
+            hdr.data_len,
+            hdr.pad_len,
+            data, 
+            padding
+        )
+
+    except struct.error:
+        return None
+
+    return packet
+
+def proto_read():
+    pass 
+
+def proto_write():
+    pass 
+
+# flow: every command only passes in opcode + optional data
+# build packet will take in teh opcode + data and handle all chunking + padding 
+# so no more get data and then saend
+# we just send opcode + all data to proto_write. that will then internally call get padding, build packet etc. 
+# caller will then await proto.read for intial response and then call again for any additional data required 
+
+
 

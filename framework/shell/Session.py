@@ -81,11 +81,14 @@ class Session:
         if self.writer.is_closing():
             return None 
 
-        ns = Netstat()
+        # will call proto write with opcode and None as data 
+        # then will await proto recv 
+        # if additioanl data, loop until proto recv is finished. then prtin the connections, etc. 
 
+        ns = Netstat()
         request = ns.pack_request()
         if request is None: 
-            self.log.info("Unable to generate netstat request")
+            self.log.info("Unable to create `netstat` request")
             return 
 
         self.writer.write(request)
@@ -95,7 +98,8 @@ class Session:
         except ConnectionResetError:
             return None 
 
-        response = await self.reader.read() # header size , most likely wrap this into a wrapper function so we can ensure we get all bytes. can be stored in tls
+        response = await self.reader.read() ## should store helpers inside of the proto.c file
+
 
     async def get_listing(self, args: list):
         pass

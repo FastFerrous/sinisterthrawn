@@ -2,8 +2,6 @@ import struct
 from typing import Optional, List
 from shell.commands.protocol import PacketHeader, PACKET_HEADER_FMT, get_padding, Opcodes   
 
-# temp 
-
 class Netstat:
     def __init__(self):
         self.usage: str = "usage: netstat"
@@ -12,11 +10,10 @@ class Netstat:
     def pack_request(self) -> Optional[bytearray]:
         """packs netstat request via struct.pack() into a singular buffer for writing over socket"""
 
-        try: 
-            padding = get_padding(struct.calcsize(PACKET_HEADER_FMT))
-        except struct.error:
+        padding = get_padding()
+        if padding is None: 
             return None 
-        
+                
         fmt: str = PACKET_HEADER_FMT + f"{len(padding)}s"
 
         try: 
@@ -31,3 +28,5 @@ class Netstat:
 
         return packet 
 
+
+# netstat entry can be a dataclass rather so once we get all data assembled, just iter and create new entries, etc. 
